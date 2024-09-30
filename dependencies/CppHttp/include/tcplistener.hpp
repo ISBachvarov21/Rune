@@ -3,6 +3,7 @@
 #include "router.hpp"
 #include <iostream>
 #include <functional>
+#include <sys/poll.h>
 #include <thread>
 #include <stdexcept>
 #include <string>
@@ -24,6 +25,7 @@
 #pragma comment (lib, "Ws2_32.lib")
 #elif defined(__linux__) || defined(__APPLE__)
 #include <sys/socket.h>
+#include <poll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -106,17 +108,6 @@ namespace CppHttp {
                     throw std::runtime_error("Failed to listen");
                 }
                 std::cout << "\033[1;32m[+] Started listening on " << ip << ':' << port << " with " << (int)maxConnections << " max connections\033[0m\n";
-
-
-                while (true) {
-                    try {
-                        this->Accept();
-                    }
-                    catch (std::runtime_error& e) {
-                        std::cout << "\033[31m[-] Error: " << e.what() << "\033[0m\n";
-                    }
-                }
-                this->Close();
             }
 
             void Close() {
@@ -154,50 +145,22 @@ namespace CppHttp {
 #endif
             }
 
-
-        private:
-            SOCKET listener = INVALID_SOCKET;
-            sockaddr_in server;
-
-#ifdef WINDOWS
-            WSADATA wsaData;
-#endif
-
-            //Request req = Request();
-
-            int serverLen;
-
-            Event<void, SOCKET> onConnect;
-            Event<void, SOCKET> onDisconnect;
-            Event<void, Request&> onReceive;
-
-            std::vector<std::future<void>> futures;
-            std::queue<std::function<void()>> tasks;
-            std::vector<std::thread> threads;
-            std::mutex queueMutex;
-            std::condition_variable condition;
-
-            void InitThreadPool(const int maxConnections) {
-                for (int i = 0; i < maxConnections; ++i) {
-                    threads.emplace_back([this]() {
-                        while (true) {
-                            std::function<void()> task;
-                            {
-                                std::unique_lock<std::mutex> lock(queueMutex);
-                                condition.wait(lock, [this]() { return !tasks.empty(); });
-                                task = std::move(tasks.front());
-                                tasks.pop();
-                            }
-                            task();
-                        }
-                        });
-                }
-            }
-
             void Accept() {
                 #ifdef WINDOWS
                 SOCKET newConnection = accept(listener, (SOCKADDR*)&this->server, &this->serverLen);
                 #elif defined(LINUX)
+                pollfd pfd[1];
+                pfd[0].fd = listener;
+                pfd[0].events = POLLIN;
+
+                auto ready = poll(pfd, 1, 1);
+
+                if (!(pfd[0].revents & POLLIN)) {
+                  if (pfd[0].revents & (POLLERR | POLLHUP)) {
+                    this->Close();
+                  }
+                  return;
+                }
                 SOCKET newConnection = accept(listener, (struct sockaddr*)&this->server, (socklen_t*)&this->serverLen);
                 #endif
 
@@ -316,6 +279,45 @@ namespace CppHttp {
 
                 lock.unlock();
                 condition.notify_one();
+            }
+
+        private:
+            SOCKET listener = INVALID_SOCKET;
+            sockaddr_in server;
+
+#ifdef WINDOWS
+            WSADATA wsaData;
+#endif
+
+            //Request req = Request();
+
+            int serverLen;
+
+            Event<void, SOCKET> onConnect;
+            Event<void, SOCKET> onDisconnect;
+            Event<void, Request&> onReceive;
+
+            std::vector<std::future<void>> futures;
+            std::queue<std::function<void()>> tasks;
+            std::vector<std::thread> threads;
+            std::mutex queueMutex;
+            std::condition_variable condition;
+
+            void InitThreadPool(const int maxConnections) {
+                for (int i = 0; i < maxConnections; ++i) {
+                    threads.emplace_back([this]() {
+                        while (true) {
+                            std::function<void()> task;
+                            {
+                                std::unique_lock<std::mutex> lock(queueMutex);
+                                condition.wait(lock, [this]() { return !tasks.empty(); });
+                                task = std::move(tasks.front());
+                                tasks.pop();
+                            }
+                            task();
+                        }
+                        });
+                }
             }
 
             #ifdef WINDOWS
