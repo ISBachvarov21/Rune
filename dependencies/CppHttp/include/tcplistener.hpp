@@ -69,7 +69,7 @@ namespace CppHttp {
                 std::cout << "\033[1;32m[+] Created socket\033[0m\n";
             }
 
-            void Listen(const char* ip, uint_fast16_t port, uint_fast8_t maxConnections) {
+            void Bind(const char* ip, uint_fast16_t port, uint_fast8_t maxConnections) {
                 this->InitThreadPool(maxConnections);
 
                 this->server.sin_family = AF_INET;
@@ -94,7 +94,9 @@ namespace CppHttp {
                     throw std::runtime_error("Failed to bind socket");
                 }
                 std::cout << "\033[1;32m[+] Bound socket\033[0m\n";
+            }
 
+            void Listen(const char* ip, uint_fast16_t port, uint_fast8_t maxConnections) {
                 int backlog = 20;
                 if (listen(this->listener, maxConnections) != 0) {
                     std::cout << "\033[31m[-] Failed to listen...\033[0m\n";

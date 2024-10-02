@@ -19,4 +19,9 @@ CppHttp::Net::Router* router = new CppHttp::Net::Router();
 }
 )";
 
-CppHttp::Net::TcpListener* getListener();
+#define EXPORT extern "C" __attribute__((visibility("default")))
+#define REQUEST CppHttp::Net::Request
+
+EXPORT void instantiateRoutes(CppHttp::Net::TcpListener*, CppHttp::Net::Router*);
+
+HttpResponse root(REQUEST req); 

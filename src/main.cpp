@@ -3,15 +3,14 @@
  *       need to reload server dll when files are modified
  *
  *       need to add server/routes header parsing
- */
+*/
 
 /*
  * INFO: {{routes}} in cppTemplate is at index 323 and ends at index 333
  *
  *
- */
+*/
 
-#include "../server/server.hpp"
 #include "../dependencies/CppHttp/include/CppHttp.hpp"
 #include <iostream>
 #include <mutex>
@@ -20,25 +19,32 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#include <dlfcn.h>
 
+typedef void (*instantiateRoutesFunc)(CppHttp::Net::TcpListener*, CppHttp::Net::Router*);
 const static std::mutex reloadMutex = std::mutex();
 
-void server(std::stop_token stoken, bool *shoudlReload) {
+void server(std::stop_token stoken, bool *shouldReload, instantiateRoutesFunc* listenerPtr) {
  while (!stoken.stop_requested()) {
-   CppHttp::Net::TcpListener *listener = getListener();
-    while (!(*shoudlReload)) {
-      listener->Listen("127.0.0.1", 8000, std::thread::hardware_concurrency());
+    CppHttp::Net::Router* router = new CppHttp::Net::Router();
+    CppHttp::Net::TcpListener* listener = new CppHttp::Net::TcpListener();
+  
+    (*listenerPtr)(listener, router);
+
+    listener->Bind("127.0.0.1", 8000, std::thread::hardware_concurrency());
+    listener->Listen("127.0.0.1", 8000, std::thread::hardware_concurrency());
+   
+    while (!(*shouldReload)) {
       listener->Accept();
     }
+    
     listener->Close();
     delete listener;
+    delete router;
   }
 }
 
 int main() {
-}
-
-int mai() {
   int fd = inotify_init();
 
   if (fd < 0) {
@@ -54,14 +60,29 @@ int mai() {
     return 1;
   }
 
-  // std::jthread serverThread(server);
-
   char buffer[4096];
 
   std::vector<std::string> headers;
 
   bool shouldCompile = false;
 
+  void* dll = dlopen("./server/out/libserver.so", RTLD_NOW);
+  
+  if (!dll) {
+    std::cout << "Error loading dll";
+    return 1;
+  } 
+
+
+  instantiateRoutesFunc listenerPtr = (instantiateRoutesFunc)dlsym(dll, "instantiateRoutes");
+  char* error;
+  error = dlerror();
+
+  if (error != NULL) {
+    std::cout << "Failed to load getListener\n";
+  }
+  std::jthread serverThread(server, &shouldCompile, &listenerPtr);
+  
   while (true) {
     shouldCompile = false;
     int length = read(fd, buffer, 4096);
@@ -72,7 +93,7 @@ int mai() {
     }
 
     int i = 0;
-
+    
     while (i < length) {
       inotify_event *event = (inotify_event *)&buffer[i];
 
@@ -96,9 +117,6 @@ int mai() {
           std::erase(headers, event->name);
         }
 
-        for (auto header : headers) {
-          std::cout << header << std::endl;
-        }
       }
 
       i += sizeof(inotify_event) + event->len;
@@ -111,8 +129,13 @@ int mai() {
       system("cmake -S server -B server/out && cmake --build server/out");
 
       // restart server
+
+      dll = dlopen("./server/out/libserver.so", RTLD_NOW);
+      listenerPtr = (instantiateRoutesFunc)dlsym(dll, "instantiateRoutes");
+      shouldCompile = false;
     }
   }
+
 
   inotify_rm_watch(fd, wd);
   close(fd);
