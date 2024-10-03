@@ -5,6 +5,7 @@
 #include <memory>
 
 template <typename FuncReturnType, typename... Args>
+
 class Event {
 public:
     using FuncType = std::function<FuncReturnType(Args...)>;

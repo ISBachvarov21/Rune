@@ -179,7 +179,6 @@ namespace CppHttp {
 
                 std::unique_lock<std::mutex> lock(queueMutex);
                 tasks.push([this, newConnection]() {
-                    std::osyncstream(std::osyncstream(std::cout)) << "\033[1;32m[+] Accepted new connection...\033[0m\n";
                     this->onConnect.Invoke(newConnection);
 
                     // set socket to timeout after 500 ms
@@ -239,8 +238,6 @@ namespace CppHttp {
                         return;
                     }
 
-                    std::osyncstream(std::cout) << "\033[1;32m[+] Received client request\033[0m\n";
-
                     std::string data = std::string(buffer.get());
 
                     if (data == "") {
@@ -276,7 +273,10 @@ namespace CppHttp {
                     this->onReceive.Invoke(req);
 
                     this->onDisconnect.Invoke(newConnection);
+
                     closesocket(newConnection);
+
+                    std::osyncstream(std::cout) << "\033[1;32m[*] Request handled\033[0m\n";
                 });
 
                 lock.unlock();

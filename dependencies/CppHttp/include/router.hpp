@@ -8,15 +8,19 @@
 #include <functional>
 #include <iostream>
 #include <optional>
-#include <regex>
-#include <sstream>
 #include <string>
 #include <syncstream>
+#include <typeinfo>
 #include <unordered_map>
 
 #ifdef __linux__ || __APPLE__
 #include <errno.h>
 #endif
+
+// function pointer define
+typedef std::tuple<CppHttp::Net::ResponseType, std::string,
+                   std::optional<std::vector<std::string>>> (*callbackType)(
+    CppHttp::Net::Request);
 
 using json = nlohmann::json;
 
@@ -28,9 +32,6 @@ class Router {
 
 public:
   void Handle(Request &req) {
-    std::cout << "\033[1;32m[+] Requested path: " << req.m_info.route
-              << "\033[0m\n";
-
 #ifdef API_DEBUG
     std::cout << "\033[1;34m[*] Handling request...\033[0m\n";
     std::cout << "\033[1;34m	[*] Method: " << req.m_info.method
@@ -60,38 +61,24 @@ public:
 
     std::string method = req.m_info.method;
 
-    std::vector<returnType> responses;
     returnType response = {ResponseType::OK, "", {}};
+    if (this->callbacks[this->getIndexes[req.m_info.route]] != NULL ||
+        this->callbacks[this->postIndexes[req.m_info.route]] != NULL ||
+        this->callbacks[this->putIndexes[req.m_info.route]] != NULL ||
+        this->callbacks[this->delIndexes[req.m_info.route]] != NULL) {
 
-    std::cout << "OKsDWDSADAWDSA\n";
-    
-    for (auto &[path, pair] : this->get) {
-      std::cout << "Path: " << &path << std::endl;
-    }
-
-    this->get[req.m_info.route];
-    std::osyncstream(std::cout) << "Path: " << req.m_info.route << std::endl;
-    if (this->get.contains(req.m_info.route) ||
-        this->post.contains(req.m_info.route) ||
-        this->put.contains(req.m_info.route) ||
-        this->del.contains(req.m_info.route)) {
-      
       try {
         if (method == "GET") {
-          responses = this->get[req.m_info.route].Invoke(req);
+          response = this->callbacks[this->getIndexes[req.m_info.route]](req);
         } else if (method == "POST") {
-          responses = this->post[req.m_info.route].Invoke(req);
+          response = this->callbacks[this->postIndexes[req.m_info.route]](req);
         } else if (method == "PUT") {
-          responses = this->put[req.m_info.route].Invoke(req);
+          response = this->callbacks[this->putIndexes[req.m_info.route]](req);
         } else if (method == "DELETE") {
-          responses = this->del[req.m_info.route].Invoke(req);
+          response = this->callbacks[this->delIndexes[req.m_info.route]](req);
         }
       } catch (std::exception &e) {
-        responses = {{ResponseType::INTERNAL_ERROR, e.what(), {}}};
-      }
-
-      for (auto &res : responses) {
-        response = res;
+        response = {ResponseType::INTERNAL_ERROR, e.what(), {}};
       }
     } else {
       for (auto [path, pair] : paramRoutes) {
@@ -107,7 +94,6 @@ public:
         // find index of element in pathSplit that begins with '{'
         std::vector<std::vector<std::string>::iterator> indexes;
 
-        std::osyncstream(std::cout) << "in else\n\n";
         for (auto it = pathSplit.begin(); it != pathSplit.end(); ++it) {
           if ((*it)[0] == '{') {
             indexes.push_back(it);
@@ -176,60 +162,49 @@ public:
         }
 
         try {
-          responses = pair.first.Invoke(req);
+          response = pair.first(req);
         } catch (std::exception &e) {
-          responses = {{ResponseType::INTERNAL_ERROR, e.what(), {}}};
-        }
-
-        for (auto &res : responses) {
-          response = res;
+          response = {ResponseType::INTERNAL_ERROR, e.what(), {}};
         }
       }
     }
 
-    std::osyncstream(std::cout) << "Responding\n\n";
     this->Respond(req, response);
   }
 
-  void AddRoute(std::string method, std::string path,
-                std::function<returnType(Request &)> callback) {
+  void AddRoute(std::string method, std::string path, callbackType callback) {
     for (auto &c : method) {
       c = toupper(c);
     }
 
     if (path.find('{') != std::string::npos) {
-      this->paramRoutes[path].first.Attach(callback);
+      this->paramRoutes[path].first = callback;
       this->paramRoutes[path].second = method;
     } else {
+      int index = -1;
+      this->callbacks.push_back(callback);
+      index = this->callbacks.size() - 1;
       if (method == "GET") {
-        this->get[path].Attach(callback);
-        std::cout << "Added route: " << path << std::endl;
-        for (auto &[path, pair] : this->get) {
-          std::cout << "Path: " << path << std::endl;
-        }
+        this->getIndexes[path] = index;
       } else if (method == "POST") {
-        this->post[path].Attach(callback);
+        this->postIndexes[path] = index;
       } else if (method == "PUT") {
-        this->put[path].Attach(callback);
+        this->putIndexes[path] = index;
       } else if (method == "DELETE") {
-        this->del[path].Attach(callback);
+        this->delIndexes[path] = index;
       }
     }
   }
 
-private:
-  std::unordered_map<std::string, Event<returnType, CppHttp::Net::Request &>>
-      get;
-  std::unordered_map<std::string, Event<returnType, CppHttp::Net::Request &>>
-      post;
-  std::unordered_map<std::string, Event<returnType, CppHttp::Net::Request &>>
-      put;
-  std::unordered_map<std::string, Event<returnType, CppHttp::Net::Request &>>
-      del;
+  std::vector<callbackType> callbacks;
 
-  std::unordered_map<
-      std::string,
-      std::pair<Event<returnType, CppHttp::Net::Request &>, std::string>>
+  std::unordered_map<std::string, unsigned int> getIndexes = {};
+  std::unordered_map<std::string, unsigned int> postIndexes = {};
+  std::unordered_map<std::string, unsigned int> putIndexes = {};
+  std::unordered_map<std::string, unsigned int> delIndexes = {};
+
+private:
+  std::unordered_map<std::string, std::pair<callbackType, std::string>>
       paramRoutes;
 
   void Respond(Request &req, returnType response) {
