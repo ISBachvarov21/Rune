@@ -28,6 +28,10 @@ void instantiateRoutes(CppHttp::Net::TcpListener &listener,
 }
 )";
 
+static json config;
+
+void loadConfig();
+
 void server(std::stop_token stoken, bool &shouldReload,
             std::mutex &reloadMutex);
 

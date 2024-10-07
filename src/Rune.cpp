@@ -1,5 +1,26 @@
 #include "../include/Rune.hpp"
 
+// TODO: replace literal string values with config values (continue from line 168)
+
+void loadConfig() {
+  std::ifstream file("rune.json");
+  if (!file) {
+    std::ofstream newFile("rune.json");
+
+    // Default configuration
+    newFile << "{\n"
+            << "\t\"port\": 8000,\n"
+            << "\t\"host\": \"127.0.0.1\",\n"
+            << "\t\"server_location\": \"./server\",\n"
+            << "\t\"endpoint_location\": \"./server/routes\"\n"
+            << "}";
+    newFile.close();
+    file.open("rune.json");
+  }
+
+  config = json::parse(file);
+}
+
 void server(std::stop_token stoken, bool &shouldReload,
             std::mutex &reloadMutex) {
   CppHttp::Net::Router router;
@@ -38,7 +59,7 @@ void populateRoutes(std::vector<std::string> headers) {
     headersValue += "#include \"routes/" + header + "\"\n";
 
     std::string path = "./server/routes/" + header;
-    std::ifstream file(path); 
+    std::ifstream file(path);
     std::string line;
 
     while (std::getline(file, line)) {
@@ -101,14 +122,17 @@ void *loadLibrary(const char *libPath) {
 }
 
 void watchFiles() {
+  loadConfig();
+
   int fd = inotify_init();
   if (fd < 0) {
     std::cerr << "Failed to initialize inotify" << std::endl;
     return;
   }
 
-  int wd = inotify_add_watch(fd, "./server/routes",
-                             IN_CREATE | IN_DELETE | IN_MODIFY);
+  int wd = inotify_add_watch(
+      fd, config["endpoint_location"].get<std::string>().data(),
+      IN_CREATE | IN_DELETE | IN_MODIFY);
   if (wd < 0) {
     std::cerr << "Failed to add watch" << std::endl;
     return;
@@ -119,9 +143,11 @@ void watchFiles() {
 
   DIR *dir;
   dirent *ent;
-  if ((dir = opendir("./server/routes")) != NULL) {
+  if ((dir = opendir(config["endpoint_location"].get<std::string>().data())) !=
+      NULL) {
     while ((ent = readdir(dir)) != NULL) {
-      if (ent->d_type == DT_REG) {
+      if (ent->d_type == DT_REG &&
+          ((std::string)ent->d_name).find(".hpp") != std::string::npos) {
         headers.push_back(ent->d_name);
       }
     }
@@ -132,9 +158,15 @@ void watchFiles() {
   bool shouldReload = false;
 
   populateRoutes(headers);
-  system("cmake -S server -B server/out && cmake --build server/out");
+  system(std::string("cmake -S " +
+                     config["server_location"].get<std::string>() + " -B " +
+                     config["build_location"].get<std::string>())
+             .c_str());
 
-  void *serverLib = loadLibrary("./server/out/libserver.so");
+  void *serverLib = loadLibrary(
+      std::string(config["build_location"].get<std::string>() + "/libserver.so")
+          .c_str());
+
   if (!serverLib) {
     return;
   }
