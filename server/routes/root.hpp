@@ -1,6 +1,2 @@
-dawhdsawdsah
+#include "../../dependencies/CppHttp/include/CppHttp.hpp"
 
-
-ROUTE::GET("/", [&](REQUEST req) {
-
-})

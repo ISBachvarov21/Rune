@@ -5,12 +5,9 @@
 #include "nlohmann/json.hpp"
 #include "request.hpp"
 #include "responsetype.hpp"
-#include <functional>
 #include <iostream>
 #include <optional>
 #include <string>
-#include <syncstream>
-#include <typeinfo>
 #include <unordered_map>
 
 #ifdef __linux__ || __APPLE__
@@ -62,20 +59,20 @@ public:
     std::string method = req.m_info.method;
 
     returnType response = {ResponseType::OK, "", {}};
-    if (this->callbacks[this->getIndexes[req.m_info.route]] != NULL ||
-        this->callbacks[this->postIndexes[req.m_info.route]] != NULL ||
-        this->callbacks[this->putIndexes[req.m_info.route]] != NULL ||
-        this->callbacks[this->delIndexes[req.m_info.route]] != NULL) {
+    if (this->get[req.m_info.route] != NULL ||
+        this->post[req.m_info.route] != NULL ||
+        this->put[req.m_info.route] != NULL ||
+        this->del[req.m_info.route] != NULL) {
 
       try {
         if (method == "GET") {
-          response = this->callbacks[this->getIndexes[req.m_info.route]](req);
+          response = this->get[req.m_info.route](req);
         } else if (method == "POST") {
-          response = this->callbacks[this->postIndexes[req.m_info.route]](req);
+          response = this->post[req.m_info.route](req);
         } else if (method == "PUT") {
-          response = this->callbacks[this->putIndexes[req.m_info.route]](req);
+          response = this->put[req.m_info.route](req);
         } else if (method == "DELETE") {
-          response = this->callbacks[this->delIndexes[req.m_info.route]](req);
+          response = this->del[req.m_info.route](req);
         }
       } catch (std::exception &e) {
         response = {ResponseType::INTERNAL_ERROR, e.what(), {}};
@@ -181,29 +178,32 @@ public:
       this->paramRoutes[path].first = callback;
       this->paramRoutes[path].second = method;
     } else {
-      int index = -1;
-      this->callbacks.push_back(callback);
-      index = this->callbacks.size() - 1;
       if (method == "GET") {
-        this->getIndexes[path] = index;
+        this->get[path] = callback;
       } else if (method == "POST") {
-        this->postIndexes[path] = index;
+        this->post[path] = callback;
       } else if (method == "PUT") {
-        this->putIndexes[path] = index;
+        this->put[path] = callback;
       } else if (method == "DELETE") {
-        this->delIndexes[path] = index;
+        this->del[path] = callback;
       }
     }
   }
 
-  std::vector<callbackType> callbacks;
-
-  std::unordered_map<std::string, unsigned int> getIndexes = {};
-  std::unordered_map<std::string, unsigned int> postIndexes = {};
-  std::unordered_map<std::string, unsigned int> putIndexes = {};
-  std::unordered_map<std::string, unsigned int> delIndexes = {};
+  void DetatchAll() {
+    this->get.clear();
+    this->post.clear();
+    this->put.clear();
+    this->del.clear();
+    this->paramRoutes.clear();
+  }
 
 private:
+  std::unordered_map<std::string, callbackType> get = {};
+  std::unordered_map<std::string, callbackType> post = {};
+  std::unordered_map<std::string, callbackType> put = {};
+  std::unordered_map<std::string, callbackType> del = {};
+
   std::unordered_map<std::string, std::pair<callbackType, std::string>>
       paramRoutes;
 
