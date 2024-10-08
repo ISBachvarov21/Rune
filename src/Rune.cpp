@@ -1,24 +1,56 @@
 #include "../include/Rune.hpp"
 
-// TODO: replace literal string values with config values (continue from line 168)
+// TODO: replace literal string values with config values (continue from line
+// 168)
 
 void loadConfig() {
   std::ifstream file("rune.json");
   if (!file) {
     std::ofstream newFile("rune.json");
-
+    
+    std::cout << "\033[1;31m[-] Configuration file not found\033[0m" << std::endl;
+    std::cout << "\033[1;31m[-] Creating new configuration file..\033[0m" << std::endl;
     // Default configuration
     newFile << "{\n"
             << "\t\"port\": 8000,\n"
             << "\t\"host\": \"127.0.0.1\",\n"
             << "\t\"server_location\": \"./server\",\n"
-            << "\t\"endpoint_location\": \"./server/routes\"\n"
+            << "\t\"endpoint_folder\": \"routes\",\n"
+            << "\t\"build_location\": \"./server/out\"\n"
             << "}";
     newFile.close();
     file.open("rune.json");
   }
 
-  config = json::parse(file);
+  std::string content((std::istreambuf_iterator<char>(file)),
+                      (std::istreambuf_iterator<char>()));
+  config = json::parse(content);
+  if (config.is_discarded()) {
+    std::cerr << "Failed to parse configuration" << std::endl;
+    return;
+  }
+  if (!config.contains("port") || !config["port"].is_number_integer()) {
+    std::cerr << "Invalid port" << std::endl;
+    return;
+  }
+  if (!config.contains("host") || !config["host"].is_string()) {
+    std::cerr << "Invalid host" << std::endl;
+    return;
+  }
+  if (!config.contains("server_location") || !config["server_location"].is_string()) {
+    std::cerr << "Invalid server location" << std::endl;
+    return;
+  }
+  if (!config.contains("endpoint_folder") || !config["endpoint_folder"].is_string()) {
+    std::cerr << "Invalid endpoint folder" << std::endl;
+    return;
+  }
+  if (!config.contains("build_location") || !config["build_location"].is_string()) {
+    std::cerr << "Invalid build location" << std::endl;
+    return;
+  }
+
+  file.close();
 }
 
 void server(std::stop_token stoken, bool &shouldReload,
@@ -29,8 +61,11 @@ void server(std::stop_token stoken, bool &shouldReload,
   listener.CreateSocket();
   listener.SetOnReceive([&](CppHttp::Net::Request req) { router.Handle(req); });
 
-  listener.Bind("127.0.0.1", 8000, std::thread::hardware_concurrency());
-  listener.Listen("127.0.0.1", 8000, std::thread::hardware_concurrency());
+  listener.Bind(config["host"].get<std::string>().c_str(),
+                config["port"].get<int>(), std::thread::hardware_concurrency());
+  listener.Listen(config["host"].get<std::string>().c_str(),
+                  config["port"].get<int>(),
+                  std::thread::hardware_concurrency());
 
   while (!stoken.stop_requested()) {
     if (instantiateRoutes) {
@@ -56,9 +91,13 @@ void populateRoutes(std::vector<std::string> headers) {
   std::string headersValue = "";
 
   for (auto header : headers) {
-    headersValue += "#include \"routes/" + header + "\"\n";
+    headersValue += "#include \"" +
+                    config["endpoint_folder"].get<std::string>() + "/" +
+                    header + "\"\n";
 
-    std::string path = "./server/routes/" + header;
+    std::string path = config["server_location"].get<std::string>() + "/" +
+                       config["endpoint_folder"].get<std::string>() + "/" +
+                       header;
     std::ifstream file(path);
     std::string line;
 
@@ -84,14 +123,12 @@ void populateRoutes(std::vector<std::string> headers) {
 
         std::string route =
             line.substr(pathIndex + 1, pathEndIndex - pathIndex - 1);
-        std::cout << route << std::endl;
 
         size_t funcNameIndex = line.find(",", pathEndIndex);
         size_t funcNameEndIndex = line.find(")", funcNameIndex);
 
         std::string funcName = line.substr(
             funcNameIndex + 2, funcNameEndIndex - funcNameIndex - 2);
-        std::cout << funcName << std::endl;
 
         std::string methodCopy = method;
         std::transform(method.begin(), method.end(), method.begin(), ::tolower);
@@ -106,7 +143,9 @@ void populateRoutes(std::vector<std::string> headers) {
   templateCopy.replace(templateCopy.find("{{ROUTES}}"), 10, routesValue);
   templateCopy.replace(templateCopy.find("{{HEADERS}}"), 11, headersValue);
 
-  std::ofstream file("./server/server.cpp", std::ios::trunc);
+  std::ofstream file(config["server_location"].get<std::string>() +
+                         "/server.cpp",
+                     std::ios::trunc);
   file << templateCopy;
 
   file.close();
@@ -130,9 +169,12 @@ void watchFiles() {
     return;
   }
 
-  int wd = inotify_add_watch(
-      fd, config["endpoint_location"].get<std::string>().data(),
-      IN_CREATE | IN_DELETE | IN_MODIFY);
+  int wd =
+      inotify_add_watch(fd,
+                        (config["server_location"].get<std::string>() + "/" +
+                         config["endpoint_folder"].get<std::string>())
+                            .data(),
+                        IN_CREATE | IN_DELETE | IN_MODIFY);
   if (wd < 0) {
     std::cerr << "Failed to add watch" << std::endl;
     return;
@@ -143,8 +185,9 @@ void watchFiles() {
 
   DIR *dir;
   dirent *ent;
-  if ((dir = opendir(config["endpoint_location"].get<std::string>().data())) !=
-      NULL) {
+  if ((dir = opendir((config["server_location"].get<std::string>() + "/" +
+                      config["endpoint_folder"].get<std::string>())
+                         .data())) != NULL) {
     while ((ent = readdir(dir)) != NULL) {
       if (ent->d_type == DT_REG &&
           ((std::string)ent->d_name).find(".hpp") != std::string::npos) {
@@ -160,6 +203,9 @@ void watchFiles() {
   populateRoutes(headers);
   system(std::string("cmake -S " +
                      config["server_location"].get<std::string>() + " -B " +
+                     config["build_location"].get<std::string>())
+             .c_str());
+  system(std::string("cmake --build " +
                      config["build_location"].get<std::string>())
              .c_str());
 
@@ -223,12 +269,24 @@ void watchFiles() {
       }
 
       populateRoutes(headers);
-      system("rm -rf server/out");
-      system("cmake -S server -B server/out && cmake --build server/out");
+      system(
+          std::string("rm -rf " + config["build_location"].get<std::string>())
+              .c_str());
+      system(std::string("cmake -S " +
+                         config["server_location"].get<std::string>() + " -B " +
+                         config["build_location"].get<std::string>())
+                 .c_str());
+      system(std::string("cmake --build " +
+                         config["build_location"].get<std::string>())
+                 .c_str());
 
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-      serverLib = loadLibrary("./server/out/libserver.so");
+      serverLib =
+          loadLibrary(std::string(config["build_location"].get<std::string>() +
+                                  "/libserver.so")
+                          .c_str());
+
       if (!serverLib) {
         continue;
       }

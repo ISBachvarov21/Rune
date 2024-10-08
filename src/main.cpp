@@ -6,7 +6,7 @@
 */
 #include "../include/Rune.hpp"
 
-int main() {
+int main(int argc, char **argv) {
   std::iostream::sync_with_stdio(false);
   std::cin.tie(nullptr);
   std::cout.tie(nullptr);
