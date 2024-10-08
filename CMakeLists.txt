@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.8)
 
-project(rune)
+project(rune-cpp)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_C_STANDARD 17)
@@ -11,4 +11,6 @@ include_directories(include dependencies/CppHttp/include)
 # recursiv  search for all files in the src directory
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
-add_executable(rune ${SOURCES})
+add_executable(rune-cpp ${SOURCES})
+
+install(TARGETS rune-cpp DESTINATION bin)
