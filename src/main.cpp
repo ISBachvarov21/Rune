@@ -11,5 +11,26 @@ int main(int argc, char **argv) {
   std::cin.tie(nullptr);
   std::cout.tie(nullptr);
 
-  watchFiles();
+  if (argc < 2) {
+    std::cout << "Options: \n"
+              << " --init: Initialize a new Rune project in current directory\n"
+              << " --run: Run Rune project" << std::endl;
+    return 0;
+  }
+
+  if (std::string(argv[1]) == "--init") {
+    // clone the Rune project template
+    // repo url: https://github.com/ISBachvarov21/Rune-Template
+
+    std::cout << "Cloning Rune project template..." << std::endl;
+    std::string command = "git clone https://github.com/ISBachvarov21/Rune-Template && rm -rf Rune-Template/.git && mv Rune-Template/* . && rm -rf Rune-Template";
+    system(command.c_str());
+    
+    std::cout << "Rune project initialized!" << std::endl;
+  }
+  else if (std::string(argv[1]) == "--run") {
+    // run the Rune project
+    std::cout << "Running Rune project..." << std::endl;
+    watchFiles();
+  }
 }
