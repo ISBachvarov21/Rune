@@ -56,7 +56,8 @@ Default message is "Rune Project".
 
 ### Adding endpoints
 As specified in the default configuration file (rune.json), the default server location is in `./server/`, and the default location for the endpoints is in `./server/routes/`.  
-Endpoints are automatically registered inside `./server/server.cpp`.  
+Endpoints are defined in `.hpp` files. 
+They are automatically registered inside `./server/server.cpp`.  
 Adding endpoints is done through one of the 4 predefined macros:  
 - ROUTE_GET
 - ROUTE_POST
