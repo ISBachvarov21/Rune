@@ -280,8 +280,6 @@ void watchFiles() {
                          config["build_location"].get<std::string>())
                  .c_str());
 
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
       serverLib =
           loadLibrary(std::string(config["build_location"].get<std::string>() +
                                   "/libserver.so")
