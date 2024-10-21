@@ -22,12 +22,12 @@ int main(int argc, char **argv) {
     // clone the Rune project template
     // repo url: https://github.com/ISBachvarov21/Rune-Template
 
-    std::cout << "Cloning Rune project template... dsawd" << std::endl;
+    std::cout << "Cloning Rune project template..." << std::endl;
 
 #if defined(_WIN32)
     std::string command = "git clone https://github.com/ISBachvarov21/Rune-Template . && rd .git /s /q";
 #elif defined(__linux__) || defined(__APPLE__)
-    std::string command = "git clone https://github.com/ISBachvarov21/Rune-Template && rm -rf Rune-Template/.git && mv Rune-Template/* . && rm -rf Rune-Template";
+    std::string command = "git clone https://github.com/ISBachvarov21/Rune-Template . && rm -rf .git";
 #endif
     system(command.c_str());
     
