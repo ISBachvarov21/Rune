@@ -37,6 +37,19 @@ cmake --install build
 ```
 </details>
 
+<details>
+<summary>Windows</summary>
+
+```bash
+git clone https://github.com/ISBachvarov21/Rune
+cd Rune
+cmake -S . -B build
+cmake --build build
+cmake --install build
+```
+after building and installing, put the binary's directory inside PATH
+</details>
+
 ### Initialising a Rune project
 ```bash
 mkdir <new project dir>
