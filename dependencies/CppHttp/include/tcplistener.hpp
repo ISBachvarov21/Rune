@@ -11,10 +11,9 @@
 #include <stdexcept>
 #include <string>
 #include <syncstream>
-#include <sys/poll.h>
 #include <thread>
 
-#ifdef _WIN32 || _WIN64 || _MSC_VER
+#if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #define WINDOWS
@@ -30,6 +29,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <sys/poll.h>
 #define SOCKET int
 #define INVALID_SOCKET -1
 #define LINUX
@@ -155,6 +155,27 @@ public:
 
   void Accept() {
 #ifdef WINDOWS
+    WSAPOLLFD pfd[1];
+    pfd[0].fd = listener;
+    pfd[0].events = POLLIN;
+
+    int ready = WSAPoll(pfd, 1, 1);
+
+    if (ready == SOCKET_ERROR) {
+        std::osyncstream(std::osyncstream(std::cout))
+			<< "\033[31m[-] Failed to poll for new connection...\033[0m\n";
+        std::osyncstream(std::osyncstream(std::cout)) << "\033[31m[-] WSA error code: " << WSAGetLastError() << "\033[0m\n";
+        this->Close();
+		return;
+    }
+
+    if (!(pfd[0].revents & POLLIN)) {
+        if (pfd[0].revents & (POLLERR | POLLHUP)) {
+            this->Close();  // Handle socket error or hang up
+        }
+        return;
+    }
+
     SOCKET newConnection =
         accept(listener, (SOCKADDR *)&this->server, &this->serverLen);
 #elif defined(LINUX)

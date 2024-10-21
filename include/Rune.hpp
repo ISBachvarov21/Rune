@@ -1,14 +1,22 @@
 #include "../dependencies/CppHttp/include/CppHttp.hpp"
 #include <chrono>
-#include <dlfcn.h>
 #include <iostream>
 #include <mutex>
 #include <stop_token>
-#include <sys/inotify.h>
 #include <thread>
-#include <unistd.h>
 #include <vector>
+
+#if defined(__linux__) || defined(__APPLE__)
+#include <dlfcn.h>
+#include <sys/inotify.h>
+#include <unistd.h>
 #include <dirent.h>
+#endif
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <filesystem>
+#endif
 
 typedef void (*instantiateRoutesFunc)(CppHttp::Net::TcpListener &,
                                       CppHttp::Net::Router &);
@@ -37,6 +45,11 @@ void server(std::stop_token stoken, bool &shouldReload,
 
 void populateRoutes(std::vector<std::string> headers);
 
+#if defined(__linux__) || defined(__APPLE__)
 void *loadLibrary(const char *libPath);
+#elif defined(_WIN32)
+HMODULE loadLibrary(const char *libPath);
+#endif
+
 
 void watchFiles();
