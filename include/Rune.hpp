@@ -1,3 +1,5 @@
+#pragma once
+
 #include "../dependencies/CppHttp/include/CppHttp.hpp"
 #include <chrono>
 #include <iostream>
@@ -5,6 +7,7 @@
 #include <stop_token>
 #include <thread>
 #include <vector>
+#include "Database.hpp"
 
 #if defined(__linux__) || defined(__APPLE__)
 #include <dlfcn.h>
@@ -38,12 +41,16 @@ void instantiateRoutes(CppHttp::Net::TcpListener &listener,
 
 static json config;
 
+static Database* db = nullptr;
+
 void loadConfig();
 
 void server(std::stop_token stoken, bool &shouldReload,
             std::mutex &reloadMutex);
 
 void populateRoutes(std::vector<std::string> headers);
+
+void instantiateDB();
 
 #if defined(__linux__) || defined(__APPLE__)
 void *loadLibrary(const char *libPath);
