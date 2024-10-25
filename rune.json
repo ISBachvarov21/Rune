@@ -3,6 +3,7 @@
 	"host": "127.0.0.1",
 	"server_location": "./server",
 	"endpoint_folder": "routes",
+
   "database": {
     "connection_url": "postgresql://postgres:postgres@localhost:5432/postgres"
   }

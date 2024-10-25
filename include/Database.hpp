@@ -7,6 +7,9 @@
 
 using namespace soci;
 
+#define MODEL class
+#define FIELD public
+
 class Database {
 private:
   Database(std::string databaseName, std::string username, std::string password,

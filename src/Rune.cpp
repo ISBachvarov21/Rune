@@ -425,9 +425,6 @@ void watchFiles() {
       }
 
       populateRoutes(headers);
-      system(
-          std::string("rm -rf " + config["server_location"].get<std::string>() + "/out")
-              .c_str());
       system(std::string("cmake -S " +
                          config["server_location"].get<std::string>() + " -B " +
                          config["server_location"].get<std::string>() + "/out")
@@ -464,6 +461,10 @@ void watchFiles() {
 
   inotify_rm_watch(fd, wd);
   close(fd);
+  
+  if (config.contains("database")) {
+    db->Close();
+  }
 }
 #elif defined(_WIN32)
 void watchFiles() {
