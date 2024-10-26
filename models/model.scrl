@@ -1,0 +1,4 @@
+model User : Users {
+  String name @limit(50)
+  Int age
+}

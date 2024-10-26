@@ -90,7 +90,7 @@ void instantiateDB() {
   // "<provider>://<user>:<password>@<host>:<port>/<database>" NOTE: only
   // only supports PostgreSQL for now
   // TODO: add support for other database providers
-  
+
   if (config.contains("database")) {
     if (!config["database"].contains("connection_url")) {
       std::cerr << "\033[1;31m[-] Database connection url not found\033[0m"
@@ -177,7 +177,7 @@ void populateRoutes(std::vector<std::string> headers) {
     std::string path = config["server_location"].get<std::string>() + "/" +
                        config["endpoint_folder"].get<std::string>() + "/" +
                        header;
-    
+
     std::ifstream file(path);
     std::string line;
 
@@ -292,6 +292,166 @@ void populateRoutes(std::vector<std::string> headers) {
 }
 }
 
+void reflectModels() {
+  if (!config.contains("database")) {
+    return;
+  }
+
+  if (!db) {
+    return;
+  }
+
+  // find all header files inside config["database"]["models_location"]
+
+  if (!config["database"].contains("models_location")) {
+    std::cerr << "\033[1;31m[-] Models location not found\033[0m" << std::endl;
+    return;
+  }
+
+  std::string modelsLocation =
+      config["database"]["models_location"].get<std::string>();
+  std::vector<std::string> modelFiles;
+
+#if defined(__linux__) || defined(__APPLE__)
+  DIR *dir;
+  dirent *ent;
+
+  if ((dir = opendir(modelsLocation.c_str())) != NULL) {
+    while ((ent = readdir(dir)) != NULL) {
+      if (ent->d_type == DT_REG &&
+          ((std::string)ent->d_name).find(".scrl") != std::string::npos) {
+        modelFiles.push_back(ent->d_name);
+      }
+    }
+    closedir(dir);
+  }
+
+#elif defined(_WIN32)
+  std::cout << "\033[1;31mLINE 329 MODEL REFLECTION\033[0m" << std::endl;
+#endif
+
+  std::vector<std::tuple<std::string, std::string>> modelDefinitions;
+  for (auto model : modelFiles) {
+    std::string path = modelsLocation + "/" + model;
+    std::ifstream file(path);
+    std::string line;
+    std::string fileContents;
+
+    if (!file.is_open()) {
+      std::cerr << "Error opening file: " << path << std::endl;
+      return;
+    }
+
+    unsigned int lineCount = 0;
+    bool inModel = false;
+
+    while (std::getline(file, line)) {
+      ++lineCount;
+      size_t modelDefinitionIndex = line.find("model");
+
+      if (modelDefinitionIndex != std::string::npos) {
+        std::string modelName;
+        size_t pos = modelDefinitionIndex + 5;
+        bool foundName = false;
+
+        for (auto token : line.substr(pos)) {
+          ++pos;
+          if (isalnum(token) || token == '_' || token == '-') {
+            modelName += token;
+            foundName = true;
+          }
+          else if (std::isspace(token) && !foundName) {
+            continue;
+          }
+          else if (std::isspace(token) && foundName) {
+            break;
+          }
+          else {
+            std::cerr << "Expected name for model at " << path << ":"
+                      << lineCount << ", got: '" << token << "'" << std::endl;
+            return;
+          }
+        }
+
+        if (modelName.empty() || modelName == "model") {
+          std::cerr << "Invalid or empty model name at " << path << ":" << lineCount << std::endl;
+          return;
+        }
+
+        bool foundColon = false;
+        for (auto token : line.substr(pos)) {
+          ++pos;
+
+          if (std::isspace(token) && !foundColon) {
+            continue;
+          }
+          else if (token == ':') {
+            foundColon = true;
+            break;
+          }
+        }
+
+        if (!foundColon) {
+          std::cerr << "Expected colon after model name at " << path << ":"
+                    << lineCount << std::endl;
+          return;
+        }
+
+        std::string tableName;
+        foundName = false;
+        for (auto token : line.substr(pos)) {
+          ++pos;
+
+          if (isalnum(token) || token == '_' || token == '-') {
+            tableName += token;
+            foundName = true;
+          }
+          else if (std::isspace(token) && !foundName) {
+            continue;
+          }
+          else if (std::isspace(token) && foundName) {
+            break;
+          }
+          else {
+            std::cerr << "Expected table name for model at " << path << ":"
+                      << lineCount << ", got: '" << token << "'" << std::endl;
+            return;
+          }
+        }
+
+        if (tableName.empty() || tableName == ":" || tableName == "model") {
+          std::cerr << "Invalid or empty table name at " << path << ":"
+                    << lineCount << std::endl;
+          return;
+        }
+        modelDefinitions.push_back(std::make_tuple(modelName, tableName));
+        inModel = true;
+      }
+
+      // TODO: parse field definitions
+
+      if (inModel) {
+        if (line.find("}") != std::string::npos) {
+          inModel = false;
+        }
+      }
+
+      fileContents += line + "\n";
+    }
+
+    /*
+     * model <model name> : <table name> {
+     *  <field name> : <field type> @<field constraint> @<field constraint> ...
+     * }
+     */
+
+    /*size_t modelIndex;*/
+    /*while ((modelIndex = fileContents.find("model")) != std::string::npos) {*/
+    /*  size_t modelDefinitionLine*/
+    /*}*/
+  }
+}
+
 #if defined(__linux__) || defined(__APPLE__)
 void *loadLibrary(const char *libPath) {
 
@@ -365,9 +525,10 @@ void watchFiles() {
                      config["server_location"].get<std::string>() + "/out")
              .c_str());
 
-  void *serverLib = loadLibrary(
-      std::string(config["server_location"].get<std::string>() + "/out/libserver.so")
-          .c_str());
+  void *serverLib =
+      loadLibrary(std::string(config["server_location"].get<std::string>() +
+                              "/out/libserver.so")
+                      .c_str());
 
   if (!serverLib) {
     return;
@@ -461,7 +622,7 @@ void watchFiles() {
 
   inotify_rm_watch(fd, wd);
   close(fd);
-  
+
   if (config.contains("database")) {
     db->Close();
   }

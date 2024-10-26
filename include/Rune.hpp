@@ -52,6 +52,8 @@ void populateRoutes(std::vector<std::string> headers);
 
 void instantiateDB();
 
+void reflectModels();
+
 #if defined(__linux__) || defined(__APPLE__)
 void *loadLibrary(const char *libPath);
 #elif defined(_WIN32)

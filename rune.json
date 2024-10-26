@@ -5,6 +5,7 @@
 	"endpoint_folder": "routes",
 
   "database": {
-    "connection_url": "postgresql://postgres:postgres@localhost:5432/postgres"
+    "connection_url": "postgresql://postgres:postgres@localhost:5432/postgres",
+    "models_location": "./models"
   }
 }
