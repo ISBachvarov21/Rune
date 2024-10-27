@@ -10,7 +10,7 @@
 #include <string>
 #include <unordered_map>
 
-#ifdef __linux__ || __APPLE__
+#if defined(__linux__) || defined(__APPLE__)
 #include <errno.h>
 #endif
 
@@ -326,7 +326,7 @@ private:
       if (bytesSent < 0) {
         std::cout << "\033[31m[-] Failed to send message...\033[0m\n";
 
-#ifdef _WIN32 || _WIN64 || _MSC_VER
+#if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
         std::cout << "\033[31m[-] Error code: " << WSAGetLastError()
                   << "\033[0m\n";
 #elif defined(__linux__) || defined(__APPLE__)

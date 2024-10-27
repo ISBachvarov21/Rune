@@ -1,4 +1,10 @@
 model User : Users {
-  String name @limit(50)
-  Int age
+  name : String
+  age : Int
+}
+
+model Post : Posts {
+  id : Int
+  title : String
+  description : String
 }

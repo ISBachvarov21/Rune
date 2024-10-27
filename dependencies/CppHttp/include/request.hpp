@@ -9,7 +9,7 @@
 #include <regex>
 #include "ctre.hpp"
 
-#ifdef _WIN32 || _WIN64 || _MSC_VER
+#if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
 	#define WIN32_LEAN_AND_MEAN
 	#define _WINSOCK_DEPRECATED_NO_WARNINGS
 	#include <Windows.h>

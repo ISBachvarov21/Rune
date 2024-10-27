@@ -191,7 +191,7 @@ void populateRoutes(std::vector<std::string> headers) {
       if (file.fail()) {
         std::cerr << "Error details: " << strerror(errno) << std::endl;
 
-#if defined(_WIN32)
+        #if defined(_WIN32)
         if (errno == EACCES) {
           HANDLE hFile =
               CreateFileA(path.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING,
@@ -237,7 +237,8 @@ void populateRoutes(std::vector<std::string> headers) {
           }
         }
       }
-#endif
+      #endif
+      }
     }
 
     while (std::getline(file, line)) {
@@ -290,7 +291,6 @@ void populateRoutes(std::vector<std::string> headers) {
 
   fileTemplate.close();
 }
-}
 
 void reflectModels() {
   if (!config.contains("database")) {
@@ -330,12 +330,14 @@ void reflectModels() {
   std::cout << "\033[1;31mLINE 329 MODEL REFLECTION\033[0m" << std::endl;
 #endif
 
-  std::vector<std::tuple<std::string, std::string>> modelDefinitions;
+  std::vector<std::pair<std::string, std::string>> modelDefinitions;
+  std::vector<std::vector<std::pair<std::string, std::string>>>
+      fieldDefinitions;
+
   for (auto model : modelFiles) {
     std::string path = modelsLocation + "/" + model;
     std::ifstream file(path);
     std::string line;
-    std::string fileContents;
 
     if (!file.is_open()) {
       std::cerr << "Error opening file: " << path << std::endl;
@@ -343,112 +345,165 @@ void reflectModels() {
     }
 
     unsigned int lineCount = 0;
-    bool inModel = false;
+    int inModel = -1;
+    std::vector<std::pair<std::string, std::string>> fields;
 
     while (std::getline(file, line)) {
       ++lineCount;
-      size_t modelDefinitionIndex = line.find("model");
+      if (inModel == -1) {
+        size_t modelDefinitionIndex = line.find("model");
 
-      if (modelDefinitionIndex != std::string::npos) {
-        std::string modelName;
-        size_t pos = modelDefinitionIndex + 5;
-        bool foundName = false;
+        if (modelDefinitionIndex != std::string::npos) {
+          std::string modelName;
+          size_t pos = modelDefinitionIndex + 5;
+          bool foundName = false;
 
-        for (auto token : line.substr(pos)) {
-          ++pos;
-          if (isalnum(token) || token == '_' || token == '-') {
-            modelName += token;
-            foundName = true;
+          for (auto token : line.substr(pos)) {
+            ++pos;
+            if (isalnum(token) || token == '_' || token == '-') {
+              modelName += token;
+              foundName = true;
+            } else if (std::isspace(token) && !foundName) {
+              continue;
+            } else if (std::isspace(token) && foundName) {
+              break;
+            } else {
+              std::cerr << "Expected name for model at " << path << ":"
+                        << lineCount << ", got: '" << token << "'" << std::endl;
+              return;
+            }
           }
-          else if (std::isspace(token) && !foundName) {
-            continue;
-          }
-          else if (std::isspace(token) && foundName) {
-            break;
-          }
-          else {
-            std::cerr << "Expected name for model at " << path << ":"
-                      << lineCount << ", got: '" << token << "'" << std::endl;
+
+          if (modelName.empty() || modelName == "model") {
+            std::cerr << "Invalid or empty model name at " << path << ":"
+                      << lineCount << std::endl;
             return;
           }
-        }
 
-        if (modelName.empty() || modelName == "model") {
-          std::cerr << "Invalid or empty model name at " << path << ":" << lineCount << std::endl;
-          return;
-        }
+          bool foundColon = false;
+          for (auto token : line.substr(pos)) {
+            ++pos;
 
-        bool foundColon = false;
-        for (auto token : line.substr(pos)) {
-          ++pos;
-
-          if (std::isspace(token) && !foundColon) {
-            continue;
+            if (std::isspace(token) && !foundColon) {
+              continue;
+            } else if (token == ':') {
+              foundColon = true;
+              break;
+            }
           }
-          else if (token == ':') {
-            foundColon = true;
-            break;
-          }
-        }
 
-        if (!foundColon) {
-          std::cerr << "Expected colon after model name at " << path << ":"
-                    << lineCount << std::endl;
-          return;
-        }
-
-        std::string tableName;
-        foundName = false;
-        for (auto token : line.substr(pos)) {
-          ++pos;
-
-          if (isalnum(token) || token == '_' || token == '-') {
-            tableName += token;
-            foundName = true;
-          }
-          else if (std::isspace(token) && !foundName) {
-            continue;
-          }
-          else if (std::isspace(token) && foundName) {
-            break;
-          }
-          else {
-            std::cerr << "Expected table name for model at " << path << ":"
-                      << lineCount << ", got: '" << token << "'" << std::endl;
+          if (!foundColon) {
+            std::cerr << "Expected colon after model name at " << path << ":"
+                      << lineCount << std::endl;
             return;
           }
-        }
 
-        if (tableName.empty() || tableName == ":" || tableName == "model") {
-          std::cerr << "Invalid or empty table name at " << path << ":"
-                    << lineCount << std::endl;
-          return;
+          std::string tableName;
+          foundName = false;
+          for (auto token : line.substr(pos)) {
+            ++pos;
+
+            if (isalnum(token) || token == '_' || token == '-') {
+              tableName += token;
+              foundName = true;
+            } else if (std::isspace(token) && !foundName) {
+              continue;
+            } else if (std::isspace(token) && foundName) {
+              break;
+            } else {
+              std::cerr << "Expected table name for model at " << path << ":"
+                        << lineCount << ", got: '" << token << "'" << std::endl;
+              return;
+            }
+          }
+
+          if (tableName.empty() || tableName == ":" || tableName == "model") {
+            std::cerr << "Invalid or empty table name at " << path << ":"
+                      << lineCount << std::endl;
+            return;
+          }
+          modelDefinitions.push_back(std::make_pair(modelName, tableName));
+          inModel = lineCount;
+          fields.clear();
         }
-        modelDefinitions.push_back(std::make_tuple(modelName, tableName));
-        inModel = true;
       }
 
-      // TODO: parse field definitions
-
-      if (inModel) {
+      if (inModel != -1 && lineCount > inModel) {
         if (line.find("}") != std::string::npos) {
-          inModel = false;
+          inModel = -1;
+          fieldDefinitions.push_back(fields);
+        } else {
+          std::string fieldName = "";
+          std::string fieldType = "";
+          bool foundColon = false;
+          int pos = -1;
+
+          for (auto token : line) {
+            ++pos;
+            if (std::isspace(token) && fieldName.empty()) {
+              continue;
+            } else if (std::isspace(token) && !fieldName.empty()) {
+              break;
+            } else if ((isalnum(token) || token == '_' || token == '-') &&
+                       !foundColon) {
+              fieldName += token;
+            }
+          }
+
+          for (auto token : line.substr(pos)) {
+            ++pos;
+            if (token == ':') {
+              foundColon = true;
+              break;
+            }
+          }
+
+          if (!fieldName.empty() && !foundColon) {
+            std::cerr << "Expected colon after field name at " << path << ":"
+                      << lineCount << std::endl;
+            return;
+          } else if (fieldName.empty() && foundColon) {
+            std::cerr << "Expected field name before colon at " << path << ":"
+                      << lineCount << std::endl;
+            return;
+          }
+
+          for (auto token : line.substr(pos)) {
+            ++pos;
+            if (std::isspace(token) && fieldType.empty()) {
+              continue;
+            } else if (std::isspace(token) && !fieldType.empty()) {
+              break;
+            } else {
+              fieldType += token;
+            }
+          }
+
+          if (fieldType.empty() && foundColon) {
+            std::cerr << "Expected field type after colon at " << path << ":"
+                      << lineCount << std::endl;
+            return;
+          } else if (!fieldName.empty() && !fieldType.empty() && foundColon) {
+            fields.push_back(std::make_pair(fieldName, fieldType));
+          }
         }
       }
-
-      fileContents += line + "\n";
     }
 
-    /*
-     * model <model name> : <table name> {
-     *  <field name> : <field type> @<field constraint> @<field constraint> ...
-     * }
-     */
+    for (int i = 0; i < modelDefinitions.size(); ++i) {
+      auto [modelName, tableName] = modelDefinitions[i];
+      auto modelFields = fieldDefinitions[i];
 
-    /*size_t modelIndex;*/
-    /*while ((modelIndex = fileContents.find("model")) != std::string::npos) {*/
-    /*  size_t modelDefinitionLine*/
-    /*}*/
+      std::cout << "Model: " << modelName << std::endl;
+      std::cout << "Table: " << tableName << std::endl;
+      std::cout << "Fields: " << std::endl;
+
+      for (auto [fieldName, fieldType] : modelFields) {
+        std::cout << "\t" << fieldName << ": " << fieldType << std::endl;
+      }
+    }
+
+    file.close();
   }
 }
 
@@ -516,6 +571,9 @@ void watchFiles() {
 
   populateRoutes(headers);
   instantiateDB();
+  reflectModels();
+
+  std::cout << "\033[1;34m[*] Compiling...\033[0m" << std::endl;
 
   system(std::string("cmake -S " +
                      config["server_location"].get<std::string>() + " -B " +

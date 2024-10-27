@@ -7,5 +7,6 @@ void instantiateRoutes(CppHttp::Net::TcpListener &listener,
                        CppHttp::Net::Router &router) {
   router.DetatchAll();
 
+	router.AddRoute("GET", "/", get_root);
  
 }
