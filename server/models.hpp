@@ -38,7 +38,7 @@ public:
 	static User Insert(const User& user) {
 		soci::session* sql = Database::GetInstance()->GetSession();
 		User model;
-		*sql << "INSERT INTO Users (name, age,) VALUES (:User) RETURNING * ", soci::use(user), soci::into(model);
+		*sql << "INSERT INTO Users (name, age) VALUES (:name, :age) RETURNING * ", soci::use(user), soci::into(model);
 		return model;
 	}
 	static std::vector<User> DeleteByName(const std::string& name) {
@@ -57,13 +57,13 @@ public:
 	}
 	static std::vector<User> UpdateByName(const std::string& name, const User& user) {		soci::session* sql = Database::GetInstance()->GetSession();
 		std::vector<User> models;
-		soci::rowset<User> modelRS = (sql->prepare << "UPDATE Users SET name=:name age=:age  WHERE name = :name RETURNING *", soci::use(user), soci::use(name));
+		soci::rowset<User> modelRS = (sql->prepare << "UPDATE Users SET name=:name, age=:age WHERE name=:Name_ RETURNING *", soci::use(user.name), soci::use(user.age), soci::use(name));
 		std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
 		return models;
 	}
 	static std::vector<User> UpdateByAge(const int& age, const User& user) {		soci::session* sql = Database::GetInstance()->GetSession();
 		std::vector<User> models;
-		soci::rowset<User> modelRS = (sql->prepare << "UPDATE Users SET name=:name age=:age  WHERE age = :age RETURNING *", soci::use(user), soci::use(age));
+		soci::rowset<User> modelRS = (sql->prepare << "UPDATE Users SET name=:name, age=:age WHERE age=:Age_ RETURNING *", soci::use(user.name), soci::use(user.age), soci::use(age));
 		std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
 		return models;
 	}

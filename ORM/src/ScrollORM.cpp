@@ -262,6 +262,8 @@ void reflectModels(json config) {
       std::string Insert;
       std::string ORMMethods;
       std::string sociUpdateFields;
+      std::string sociUpdateUses;
+      std::string sociInsertFields;
       std::string fromSetters;
       std::string toSetters;
 
@@ -285,8 +287,9 @@ void reflectModels(json config) {
         fromSetters += "\t\tp." + fieldName + " = v.get<" + dataTypes.at(fieldType).first + ">(\"" + fieldName + "\");\n";
         toSetters += "\t\tv.set(\"" + fieldName + "\", p." + fieldName + ");\n";
         fields += "\t" + dataTypes.at(fieldType).first + " " + fieldName + ";\n";
-        sociUpdateFields += fieldName + "=:" + fieldName + " ";
-
+        sociUpdateFields += fieldName + "=:" + fieldName + ", ";
+        sociUpdateUses += "soci::use(" + loweredModelName + "." + fieldName + "), ";
+        sociInsertFields += ":" + fieldName + ", ";
         Insert += fieldName + ", ";
        
         Select += "\tstatic std::vector<" + modelName + "> SelectBy" + capitalizedFieldName + "(const " + dataTypes.at(fieldType).first + "& " + fieldName + ") {\n"
@@ -306,20 +309,24 @@ void reflectModels(json config) {
                     "\t}\n";
       }
 
+      Insert.replace(Insert.find_last_of(", ") - 1, 2, ") VALUES (" + sociInsertFields.replace(sociInsertFields.find_last_of(", ") - 1, 2, ") RETURNING * \", soci::use(" + loweredModelName + "), soci::into(model);\n"));
+      
+      sociUpdateFields.replace(sociUpdateFields.find_last_of(", ") - 1, 2, " ");
+       
       for (auto [fieldName, fieldType] : modelFields) {
         std::string capitalizedFieldName = fieldName;
         capitalizedFieldName[0] = std::toupper(capitalizedFieldName[0]);
+        
 
         UpdateBy += "\tstatic std::vector<"+modelName+"> UpdateBy" + capitalizedFieldName + "(const " + dataTypes.at(fieldType).first + "& " + fieldName + ", const " + modelName + "& " + loweredModelName + ") {"
                     "\t\tsoci::session* sql = Database::GetInstance()->GetSession();\n"
                     "\t\tstd::vector<" + modelName + "> models;\n"
-                    "\t\tsoci::rowset<" + modelName + "> modelRS = (sql->prepare << \"UPDATE " + tableName + " SET " + sociUpdateFields + " WHERE " + fieldName + " = :" + fieldName + " RETURNING *\", soci::use(" + loweredModelName + "), soci::use(" + fieldName + "));\n"
+                    "\t\tsoci::rowset<" + modelName + "> modelRS = (sql->prepare << \"UPDATE " + tableName + " SET " + sociUpdateFields + "WHERE " + fieldName + "=:" + capitalizedFieldName + "_" + " RETURNING *\", " + sociUpdateUses + "soci::use(" + fieldName + "));\n"
                     "\t\tstd::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));\n"
                     "\t\treturn models;\n" 
                     "\t}\n";
       }
 
-      Insert.replace(Insert.find_last_of(", "), 2, ") VALUES (:" + modelName + ") RETURNING * \", soci::use(" + loweredModelName + "), soci::into(model);\n");
       Insert += "\t\treturn model;\n" 
                 "\t}\n";
 
