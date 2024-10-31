@@ -8,7 +8,7 @@
 #ifndef SOCI_UNSIGNED_TYPES_H_INCLUDED
 #define SOCI_UNSIGNED_TYPES_H_INCLUDED
 
-#include "soci/type-conversion-traits.h"
+#include "type-conversion-traits.h"
 #include <limits>
 
 namespace soci

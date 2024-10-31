@@ -8,7 +8,7 @@
 #ifndef SOCI_QUERY_TRANSFORMATION_H_INCLUDED
 #define SOCI_QUERY_TRANSFORMATION_H_INCLUDED
 
-#include "soci/soci-platform.h"
+#include "soci-platform.h"
 #include <string>
 
 namespace soci

@@ -2,56 +2,6 @@
 
 // TODO: replace literal string values with config values (continue from line
 // 168)
-
-void loadConfig() {
-  std::ifstream file("rune.json");
-  if (!file) {
-    std::ofstream newFile("rune.json");
-
-    std::cout << "\033[1;31m[-] Configuration file not found\033[0m"
-              << std::endl;
-    std::cout << "\033[1;31m[-] Creating new configuration file..\033[0m"
-              << std::endl;
-    // Default configuration
-    newFile << "{\n"
-            << "\t\"port\": 8000,\n"
-            << "\t\"host\": \"127.0.0.1\",\n"
-            << "\t\"server_location\": \"./server\",\n"
-            << "\t\"endpoint_folder\": \"routes\"\n"
-            << "}";
-    newFile.close();
-    file.open("rune.json");
-  }
-
-  std::string content((std::istreambuf_iterator<char>(file)),
-                      (std::istreambuf_iterator<char>()));
-  config = json::parse(content);
-  if (config.is_discarded()) {
-    std::cerr << "Failed to parse configuration" << std::endl;
-    return;
-  }
-  if (!config.contains("port") || !config["port"].is_number_integer()) {
-    std::cerr << "Invalid port" << std::endl;
-    return;
-  }
-  if (!config.contains("host") || !config["host"].is_string()) {
-    std::cerr << "Invalid host" << std::endl;
-    return;
-  }
-  if (!config.contains("server_location") ||
-      !config["server_location"].is_string()) {
-    std::cerr << "Invalid server location" << std::endl;
-    return;
-  }
-  if (!config.contains("endpoint_folder") ||
-      !config["endpoint_folder"].is_string()) {
-    std::cerr << "Invalid endpoint folder" << std::endl;
-    return;
-  }
-
-  file.close();
-}
-
 void server(std::stop_token stoken, bool &shouldReload,
             std::mutex &reloadMutex) {
   CppHttp::Net::Router router;
@@ -68,6 +18,7 @@ void server(std::stop_token stoken, bool &shouldReload,
 
   while (!stoken.stop_requested()) {
     if (instantiateRoutes) {
+      std::cout << &instantiateRoutes << std::endl;
       instantiateRoutes(listener, router);
     }
 
@@ -83,86 +34,6 @@ void server(std::stop_token stoken, bool &shouldReload,
   }
 
   listener.Close();
-}
-
-void instantiateDB() {
-  // connection url format:
-  // "<provider>://<user>:<password>@<host>:<port>/<database>" NOTE: only
-  // only supports PostgreSQL for now
-  // TODO: add support for other database providers
-
-  if (config.contains("database")) {
-    if (!config["database"].contains("connection_url")) {
-      std::cerr << "\033[1;31m[-] Database connection url not found\033[0m"
-                << std::endl;
-    }
-    std::string connectionUrl =
-        config["database"]["connection_url"].get<std::string>();
-
-    size_t providerSeparation = connectionUrl.find("://");
-
-    if (providerSeparation == std::string::npos) {
-      std::cerr << "\033[1;31m[-] Database provider not found\033[0m"
-                << std::endl;
-      return;
-    }
-
-    std::string provider = connectionUrl.substr(0, providerSeparation);
-
-    if (provider != "postgresql") {
-      std::cerr << "\033[1;31m[-] Database provider not supported\033[0m"
-                << std::endl;
-      return;
-    }
-
-    size_t userSeparation = connectionUrl.find(":", providerSeparation + 3);
-
-    if (userSeparation == std::string::npos) {
-      std::cerr << "\033[1;31m[-] Database user not found\033[0m" << std::endl;
-      return;
-    }
-
-    size_t passwordSeparation = connectionUrl.find("@", userSeparation + 1);
-
-    if (passwordSeparation == std::string::npos) {
-      std::cerr << "\033[1;31m[-] Database password not found\033[0m"
-                << std::endl;
-      return;
-    }
-
-    std::string user = connectionUrl.substr(
-        providerSeparation + 3, userSeparation - providerSeparation - 3);
-    std::string password = connectionUrl.substr(
-        userSeparation + 1, passwordSeparation - userSeparation - 1);
-
-    size_t hostSeparation = connectionUrl.find(":", passwordSeparation + 1);
-
-    if (hostSeparation == std::string::npos) {
-      std::cerr << "\033[1;31m[-] Database host not found\033[0m" << std::endl;
-      return;
-    }
-
-    size_t portSeparation = connectionUrl.find("/", hostSeparation + 1);
-
-    if (portSeparation == std::string::npos) {
-      std::cerr << "\033[1;31m[-] Database port not found\033[0m" << std::endl;
-      return;
-    }
-
-    std::string host = connectionUrl.substr(
-        passwordSeparation + 1, hostSeparation - passwordSeparation - 1);
-    std::string port = connectionUrl.substr(
-        hostSeparation + 1, portSeparation - hostSeparation - 1);
-
-    if (connectionUrl.size() - 1 <= portSeparation) {
-      std::cerr << "\033[1;31m[-] Database name not found\033[0m" << std::endl;
-      return;
-    }
-
-    std::string database = connectionUrl.substr(portSeparation + 1);
-
-    db = Database::CreateInstance(database, user, password, host, port, false);
-  }
 }
 
 void populateRoutes(std::vector<std::string> headers) {
@@ -191,7 +62,7 @@ void populateRoutes(std::vector<std::string> headers) {
       if (file.fail()) {
         std::cerr << "Error details: " << strerror(errno) << std::endl;
 
-        #if defined(_WIN32)
+#if defined(_WIN32)
         if (errno == EACCES) {
           HANDLE hFile =
               CreateFileA(path.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING,
@@ -237,280 +108,65 @@ void populateRoutes(std::vector<std::string> headers) {
           }
         }
       }
-      #endif
-      }
+#endif
     }
-
-    while (std::getline(file, line)) {
-      size_t getIndex = line.find("ROUTE_GET");
-      size_t postIndex = line.find("ROUTE_POST");
-      size_t putIndex = line.find("ROUTE_PUT");
-      size_t deleteIndex = line.find("ROUTE_DELETE");
-      size_t index = getIndex != std::string::npos      ? getIndex
-                     : postIndex != std::string::npos   ? postIndex
-                     : putIndex != std::string::npos    ? putIndex
-                     : deleteIndex != std::string::npos ? deleteIndex
-                                                        : std::string::npos;
-
-      if (index != std::string::npos) {
-        std::string method = getIndex != std::string::npos      ? "GET"
-                             : postIndex != std::string::npos   ? "POST"
-                             : putIndex != std::string::npos    ? "PUT"
-                             : deleteIndex != std::string::npos ? "DELETE"
-                                                                : "";
-        size_t pathIndex = line.find("\"", index);
-        size_t pathEndIndex = line.find("\"", pathIndex + 1);
-
-        std::string route =
-            line.substr(pathIndex + 1, pathEndIndex - pathIndex - 1);
-
-        size_t funcNameIndex = line.find(",", pathEndIndex);
-        size_t funcNameEndIndex = line.find(")", funcNameIndex);
-
-        std::string funcName = line.substr(
-            funcNameIndex + 2, funcNameEndIndex - funcNameIndex - 2);
-
-        std::string methodCopy = method;
-        std::transform(method.begin(), method.end(), method.begin(), ::tolower);
-
-        routesValue += "\trouter.AddRoute(\"" + methodCopy + "\", \"" + route +
-                       "\", " + method + "_" + funcName + ");\n";
-      }
-    }
-    file.close();
   }
 
-  std::string templateCopy = cppTemplate;
-  templateCopy.replace(templateCopy.find("{{ROUTES}}"), 10, routesValue);
-  templateCopy.replace(templateCopy.find("{{HEADERS}}"), 11, headersValue);
+  while (std::getline(file, line)) {
+    size_t getIndex = line.find("ROUTE_GET");
+    size_t postIndex = line.find("ROUTE_POST");
+    size_t putIndex = line.find("ROUTE_PUT");
+    size_t deleteIndex = line.find("ROUTE_DELETE");
+    size_t index = getIndex != std::string::npos      ? getIndex
+                   : postIndex != std::string::npos   ? postIndex
+                   : putIndex != std::string::npos    ? putIndex
+                   : deleteIndex != std::string::npos ? deleteIndex
+                                                      : std::string::npos;
 
-  std::ofstream fileTemplate(config["server_location"].get<std::string>() +
-                                 "/server.cpp",
-                             std::ios::trunc);
-  fileTemplate << templateCopy;
+    if (index != std::string::npos) {
+      std::string method = getIndex != std::string::npos      ? "GET"
+                           : postIndex != std::string::npos   ? "POST"
+                           : putIndex != std::string::npos    ? "PUT"
+                           : deleteIndex != std::string::npos ? "DELETE"
+                                                              : "";
+      size_t pathIndex = line.find("\"", index);
+      size_t pathEndIndex = line.find("\"", pathIndex + 1);
 
-  fileTemplate.close();
+      std::string route =
+          line.substr(pathIndex + 1, pathEndIndex - pathIndex - 1);
+
+      size_t funcNameIndex = line.find(",", pathEndIndex);
+      size_t funcNameEndIndex = line.find(")", funcNameIndex);
+
+      std::string funcName =
+          line.substr(funcNameIndex + 2, funcNameEndIndex - funcNameIndex - 2);
+
+      std::string methodCopy = method;
+      std::transform(method.begin(), method.end(), method.begin(), ::tolower);
+
+      routesValue += "\trouter.AddRoute(\"" + methodCopy + "\", \"" + route +
+                     "\", " + method + "_" + funcName + ");\n";
+    }
+  }
+  file.close();
 }
 
-void reflectModels() {
-  if (!config.contains("database")) {
-    return;
-  }
+std::string templateCopy = cppTemplate;
+templateCopy.replace(templateCopy.find("{{ROUTES}}"), 10, routesValue);
+templateCopy.replace(templateCopy.find("{{HEADERS}}"), 11, headersValue);
 
-  if (!db) {
-    return;
-  }
+std::ofstream fileTemplate(config["server_location"].get<std::string>() +
+                               "/server.cpp",
+                           std::ios::trunc);
+fileTemplate << templateCopy;
 
-  // find all header files inside config["database"]["models_location"]
-
-  if (!config["database"].contains("models_location")) {
-    std::cerr << "\033[1;31m[-] Models location not found\033[0m" << std::endl;
-    return;
-  }
-
-  std::string modelsLocation =
-      config["database"]["models_location"].get<std::string>();
-  std::vector<std::string> modelFiles;
-
-#if defined(__linux__) || defined(__APPLE__)
-  DIR *dir;
-  dirent *ent;
-
-  if ((dir = opendir(modelsLocation.c_str())) != NULL) {
-    while ((ent = readdir(dir)) != NULL) {
-      if (ent->d_type == DT_REG &&
-          ((std::string)ent->d_name).find(".scrl") != std::string::npos) {
-        modelFiles.push_back(ent->d_name);
-      }
-    }
-    closedir(dir);
-  }
-
-#elif defined(_WIN32)
-  std::cout << "\033[1;31mLINE 329 MODEL REFLECTION\033[0m" << std::endl;
-#endif
-
-  std::vector<std::pair<std::string, std::string>> modelDefinitions;
-  std::vector<std::vector<std::pair<std::string, std::string>>>
-      fieldDefinitions;
-
-  for (auto model : modelFiles) {
-    std::string path = modelsLocation + "/" + model;
-    std::ifstream file(path);
-    std::string line;
-
-    if (!file.is_open()) {
-      std::cerr << "Error opening file: " << path << std::endl;
-      return;
-    }
-
-    unsigned int lineCount = 0;
-    int inModel = -1;
-    std::vector<std::pair<std::string, std::string>> fields;
-
-    while (std::getline(file, line)) {
-      ++lineCount;
-      if (inModel == -1) {
-        size_t modelDefinitionIndex = line.find("model");
-
-        if (modelDefinitionIndex != std::string::npos) {
-          std::string modelName;
-          size_t pos = modelDefinitionIndex + 5;
-          bool foundName = false;
-
-          for (auto token : line.substr(pos)) {
-            ++pos;
-            if (isalnum(token) || token == '_' || token == '-') {
-              modelName += token;
-              foundName = true;
-            } else if (std::isspace(token) && !foundName) {
-              continue;
-            } else if (std::isspace(token) && foundName) {
-              break;
-            } else {
-              std::cerr << "Expected name for model at " << path << ":"
-                        << lineCount << ", got: '" << token << "'" << std::endl;
-              return;
-            }
-          }
-
-          if (modelName.empty() || modelName == "model") {
-            std::cerr << "Invalid or empty model name at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          }
-
-          bool foundColon = false;
-          for (auto token : line.substr(pos)) {
-            ++pos;
-
-            if (std::isspace(token) && !foundColon) {
-              continue;
-            } else if (token == ':') {
-              foundColon = true;
-              break;
-            }
-          }
-
-          if (!foundColon) {
-            std::cerr << "Expected colon after model name at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          }
-
-          std::string tableName;
-          foundName = false;
-          for (auto token : line.substr(pos)) {
-            ++pos;
-
-            if (isalnum(token) || token == '_' || token == '-') {
-              tableName += token;
-              foundName = true;
-            } else if (std::isspace(token) && !foundName) {
-              continue;
-            } else if (std::isspace(token) && foundName) {
-              break;
-            } else {
-              std::cerr << "Expected table name for model at " << path << ":"
-                        << lineCount << ", got: '" << token << "'" << std::endl;
-              return;
-            }
-          }
-
-          if (tableName.empty() || tableName == ":" || tableName == "model") {
-            std::cerr << "Invalid or empty table name at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          }
-          modelDefinitions.push_back(std::make_pair(modelName, tableName));
-          inModel = lineCount;
-          fields.clear();
-        }
-      }
-
-      if (inModel != -1 && lineCount > inModel) {
-        if (line.find("}") != std::string::npos) {
-          inModel = -1;
-          fieldDefinitions.push_back(fields);
-        } else {
-          std::string fieldName = "";
-          std::string fieldType = "";
-          bool foundColon = false;
-          int pos = -1;
-
-          for (auto token : line) {
-            ++pos;
-            if (std::isspace(token) && fieldName.empty()) {
-              continue;
-            } else if (std::isspace(token) && !fieldName.empty()) {
-              break;
-            } else if ((isalnum(token) || token == '_' || token == '-') &&
-                       !foundColon) {
-              fieldName += token;
-            }
-          }
-
-          for (auto token : line.substr(pos)) {
-            ++pos;
-            if (token == ':') {
-              foundColon = true;
-              break;
-            }
-          }
-
-          if (!fieldName.empty() && !foundColon) {
-            std::cerr << "Expected colon after field name at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          } else if (fieldName.empty() && foundColon) {
-            std::cerr << "Expected field name before colon at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          }
-
-          for (auto token : line.substr(pos)) {
-            ++pos;
-            if (std::isspace(token) && fieldType.empty()) {
-              continue;
-            } else if (std::isspace(token) && !fieldType.empty()) {
-              break;
-            } else {
-              fieldType += token;
-            }
-          }
-
-          if (fieldType.empty() && foundColon) {
-            std::cerr << "Expected field type after colon at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          } else if (!fieldName.empty() && !fieldType.empty() && foundColon) {
-            fields.push_back(std::make_pair(fieldName, fieldType));
-          }
-        }
-      }
-    }
-
-    for (int i = 0; i < modelDefinitions.size(); ++i) {
-      auto [modelName, tableName] = modelDefinitions[i];
-      auto modelFields = fieldDefinitions[i];
-
-      std::cout << "Model: " << modelName << std::endl;
-      std::cout << "Table: " << tableName << std::endl;
-      std::cout << "Fields: " << std::endl;
-
-      for (auto [fieldName, fieldType] : modelFields) {
-        std::cout << "\t" << fieldName << ": " << fieldType << std::endl;
-      }
-    }
-
-    file.close();
-  }
+fileTemplate.close();
 }
 
 #if defined(__linux__) || defined(__APPLE__)
 void *loadLibrary(const char *libPath) {
 
-  void *libHandle = dlmopen(LM_ID_NEWLM, libPath, RTLD_NOW | RTLD_LOCAL);
+  void *libHandle = dlopen(libPath, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
   if (!libHandle) {
     std::cerr << "Failed to load library: " << dlerror() << std::endl;
     return nullptr;
@@ -530,7 +186,7 @@ HINSTANCE loadLibrary(const char *libPath) {
 
 #if defined(__linux__) || defined(__APPLE__)
 void watchFiles() {
-  loadConfig();
+  config = loadConfig();
 
   int fd = inotify_init();
   if (fd < 0) {
@@ -570,10 +226,16 @@ void watchFiles() {
   bool shouldReload = false;
 
   populateRoutes(headers);
-  instantiateDB();
-  reflectModels();
+
+  if (config.contains("database")) {
+    reflectModels(config);
+  }
 
   std::cout << "\033[1;34m[*] Compiling...\033[0m" << std::endl;
+
+  system(std::string("rm -rf " + config["server_location"].get<std::string>() +
+                     "/out")
+             .c_str());
 
   system(std::string("cmake -S " +
                      config["server_location"].get<std::string>() + " -B " +
@@ -583,10 +245,18 @@ void watchFiles() {
                      config["server_location"].get<std::string>() + "/out")
              .c_str());
 
-  void *serverLib =
-      loadLibrary(std::string(config["server_location"].get<std::string>() +
-                              "/out/libserver.so")
-                      .c_str());
+  system(std::string("cp " + config["server_location"].get<std::string>() +
+                     "/out/libserver.so " +
+                     config["server_location"].get<std::string>() +
+                     "/out/libserver" + std::to_string(reloadCount) + ".so")
+             .c_str());
+
+  void *serverLib = loadLibrary(
+      std::string(config["server_location"].get<std::string>() +
+                  "/out/libserver" + std::to_string(reloadCount) + ".so")
+          .c_str());
+
+  reloadCount++;
 
   if (!serverLib) {
     return;
@@ -600,6 +270,17 @@ void watchFiles() {
     std::cerr << "Failed to load instantiateRoutes: " << error << std::endl;
     return;
   }
+
+  int fdm = shm_open("/db_connection_details", O_CREAT | O_RDWR, 0666);
+  ftruncate(fdm, sizeof(DatabaseInfo));
+
+  // Map the shared memory segment
+  DatabaseInfo *dbState =
+      (DatabaseInfo *)mmap(nullptr, sizeof(DatabaseInfo),
+                           PROT_READ | PROT_WRITE, MAP_SHARED, fdm, 0);
+
+  strncpy(dbState->dbConfig, config["database"].dump().c_str(),
+          config["database"].dump().length());
 
   std::jthread serverThread(server, std::ref(shouldReload),
                             std::ref(reloadMutex));
@@ -644,6 +325,11 @@ void watchFiles() {
       }
 
       populateRoutes(headers);
+
+      system(std::string("rm -rf " +
+                         config["server_location"].get<std::string>() + "/out")
+                 .c_str());
+
       system(std::string("cmake -S " +
                          config["server_location"].get<std::string>() + " -B " +
                          config["server_location"].get<std::string>() + "/out")
@@ -652,10 +338,15 @@ void watchFiles() {
                          config["server_location"].get<std::string>() + "/out")
                  .c_str());
 
-      serverLib =
-          loadLibrary(std::string(config["server_location"].get<std::string>() +
-                                  "/out/libserver.so")
-                          .c_str());
+      system(std::string("cp " + config["server_location"].get<std::string>() +
+                         "/out/libserver.so " +
+                         config["server_location"].get<std::string>() +
+                         "/out/libserver" + std::to_string(reloadCount) + ".so")
+                 .c_str());
+      serverLib = loadLibrary(
+          std::string(config["server_location"].get<std::string>() +
+                      "/out/libserver" + std::to_string(reloadCount) + ".so")
+              .c_str());
 
       if (!serverLib) {
         continue;
@@ -675,15 +366,14 @@ void watchFiles() {
         std::lock_guard<std::mutex> lock(reloadMutex);
         shouldReload = true;
       }
+
+      reloadCount++;
     }
   }
 
   inotify_rm_watch(fd, wd);
   close(fd);
-
-  if (config.contains("database")) {
-    db->Close();
-  }
+  close(fdm);
 }
 #elif defined(_WIN32)
 void watchFiles() {

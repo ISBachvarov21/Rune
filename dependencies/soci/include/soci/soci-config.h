@@ -31,7 +31,7 @@
 /* #undef SOCI_HAVE_FIREBIRD */
 
 // MYSQL backend
-/* #undef SOCI_HAVE_MYSQL */
+#define SOCI_HAVE_MYSQL
 
 // ODBC backend
 /* #undef SOCI_HAVE_ODBC */
@@ -43,7 +43,7 @@
 #define SOCI_HAVE_POSTGRESQL
 
 // SQLITE3 backend
-/* #undef SOCI_HAVE_SQLITE3 */
+#define SOCI_HAVE_SQLITE3
 
 // Test SOCI_HAVE_VISIBILITY_SUPPORT
 #define SOCI_HAVE_VISIBILITY_SUPPORT

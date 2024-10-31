@@ -8,11 +8,11 @@
 #ifndef SOCI_SESSION_H_INCLUDED
 #define SOCI_SESSION_H_INCLUDED
 
-#include "soci/soci-platform.h"
-#include "soci/once-temp-type.h"
-#include "soci/query_transformation.h"
-#include "soci/connection-parameters.h"
-#include "soci/logger.h"
+#include "soci-platform.h"
+#include "once-temp-type.h"
+#include "query_transformation.h"
+#include "connection-parameters.h"
+#include "logger.h"
 
 // std
 #include <cstddef>

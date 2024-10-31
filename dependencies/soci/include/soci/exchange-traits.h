@@ -8,9 +8,9 @@
 #ifndef SOCI_EXCHANGE_TRAITS_H_INCLUDED
 #define SOCI_EXCHANGE_TRAITS_H_INCLUDED
 
-#include "soci/type-conversion-traits.h"
-#include "soci/soci-backend.h"
-#include "soci/type-wrappers.h"
+#include "type-conversion-traits.h"
+#include "soci-backend.h"
+#include "type-wrappers.h"
 // std
 #include <ctime>
 #include <string>

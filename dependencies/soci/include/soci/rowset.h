@@ -8,8 +8,8 @@
 #ifndef SOCI_ROWSET_H_INCLUDED
 #define SOCI_ROWSET_H_INCLUDED
 
-#include "soci/soci-platform.h"
-#include "soci/statement.h"
+#include "soci-platform.h"
+#include "statement.h"
 // std
 #include <iterator>
 #include <memory>

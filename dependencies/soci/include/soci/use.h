@@ -8,10 +8,10 @@
 #ifndef SOCI_USE_H_INCLUDED
 #define SOCI_USE_H_INCLUDED
 
-#include "soci/use-type.h"
-#include "soci/exchange-traits.h"
-#include "soci/type-conversion.h"
-#include "soci/soci-backend.h"
+#include "use-type.h"
+#include "exchange-traits.h"
+#include "type-conversion.h"
+#include "soci-backend.h"
 
 namespace soci
 {

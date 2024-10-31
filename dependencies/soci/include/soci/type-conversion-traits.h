@@ -8,7 +8,7 @@
 #ifndef SOCI_TYPE_CONVERSION_TRAITS_H_INCLUDED
 #define SOCI_TYPE_CONVERSION_TRAITS_H_INCLUDED
 
-#include "soci/soci-backend.h"
+#include "soci-backend.h"
 
 namespace soci
 {

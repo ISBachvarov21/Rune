@@ -1,4 +1,5 @@
 #pragma once
+#include "../ORM/include/ScrollORM.hpp"
 
 #include "../dependencies/CppHttp/include/CppHttp.hpp"
 #include <chrono>
@@ -7,11 +8,12 @@
 #include <stop_token>
 #include <thread>
 #include <vector>
-#include "Database.hpp"
+#include "Config.hpp"
 
 #if defined(__linux__) || defined(__APPLE__)
 #include <dlfcn.h>
 #include <sys/inotify.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <dirent.h>
 #endif
@@ -23,7 +25,10 @@
 
 typedef void (*instantiateRoutesFunc)(CppHttp::Net::TcpListener &,
                                       CppHttp::Net::Router &);
+
 static std::mutex reloadMutex;
+
+static int reloadCount = 0;
 
 static instantiateRoutesFunc instantiateRoutes = nullptr;
 
@@ -39,20 +44,16 @@ void instantiateRoutes(CppHttp::Net::TcpListener &listener,
 }
 )";
 
+struct alignas(64) DatabaseInfo {
+  char dbConfig[512];
+};
+
 static json config;
-
-static Database* db = nullptr;
-
-void loadConfig();
 
 void server(std::stop_token stoken, bool &shouldReload,
             std::mutex &reloadMutex);
 
 void populateRoutes(std::vector<std::string> headers);
-
-void instantiateDB();
-
-void reflectModels();
 
 #if defined(__linux__) || defined(__APPLE__)
 void *loadLibrary(const char *libPath);

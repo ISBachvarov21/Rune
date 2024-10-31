@@ -8,9 +8,9 @@
 #ifndef SOCI_COLUMN_INFO_H_INCLUDED
 #define SOCI_COLUMN_INFO_H_INCLUDED
 
-#include "soci/soci-backend.h"
-#include "soci/type-conversion.h"
-#include "soci/values.h"
+#include "soci-backend.h"
+#include "type-conversion.h"
+#include "values.h"
 
 namespace soci
 {

@@ -8,7 +8,7 @@
 #ifndef SOCI_LOGGER_H_INCLUDED
 #define SOCI_LOGGER_H_INCLUDED
 
-#include "soci/soci-platform.h"
+#include "soci-platform.h"
 
 #include <ostream>
 

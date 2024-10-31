@@ -2,9 +2,3 @@ model User : Users {
   name : String
   age : Int
 }
-
-model Post : Posts {
-  id : Int
-  title : String
-  description : String
-}

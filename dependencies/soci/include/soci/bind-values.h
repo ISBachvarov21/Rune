@@ -1,7 +1,7 @@
 #ifndef SOCI_BIND_VALUES_H_INCLUDED
 #define SOCI_BIND_VALUES_H_INCLUDED
 
-#include "soci/soci-platform.h"
+#include "soci-platform.h"
 #include "exchange-traits.h"
 #include "into-type.h"
 #include "into.h"
