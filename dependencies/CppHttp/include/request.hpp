@@ -198,8 +198,9 @@ namespace CppHttp {
 				method(CppHttp::Utils::GetMethod(original)),
 				parameters(CppHttp::Utils::GetParameters(original)),
 				headers(CppHttp::Utils::GetHeaders(original)),
-				body(CppHttp::Utils::GetBody(original))
-			{}
+				body(CppHttp::Utils::GetBody(original)),
+        consoleStream(std::cout.rdbuf())
+			{};
 			
 			SOCKET sender = INVALID_SOCKET;
 			std::string original;
@@ -210,6 +211,7 @@ namespace CppHttp {
 			std::string body;
 			std::u8string uoriginal;
 			std::u8string ubody;
+      std::streambuf* consoleStream;
 		};
 		
 		class Request {

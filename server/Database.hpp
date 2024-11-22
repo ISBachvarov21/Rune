@@ -21,7 +21,16 @@ private:
   Database(std::string databaseName, std::string username, std::string password,
            std::string host, std::string port, bool sslMode = true) {
     dbMutex.lock();
-    sql.open(soci::postgresql, "dbname=postgres user=postgres password=postgres host=localhost port=5432");
+    
+    std::string connectionString = "dbname=" + databaseName + " user=" + username +
+                                  " password=" + password + " host=" + host +
+                                  " port=" + port;
+
+    if (sslMode) {
+      connectionString += " sslmode=require";
+    }
+
+    sql.open(soci::postgresql, connectionString);
     dbMutex.unlock();
   }
 
@@ -30,15 +39,6 @@ private:
 
 public:
   Database(const Database &) = delete;
-
-  static Database *CreateInstance(std::string databaseName,
-                                  std::string username, std::string password,
-                                  std::string host, std::string port,
-                                  bool sslMode = true) {
-    if (databaseInstance == nullptr) {
-    }
-    return databaseInstance;
-  }
 
   static Database *GetInstance() {
     if (databaseInstance == nullptr) {
@@ -58,6 +58,7 @@ public:
         std::cerr << "\033[1;31m[-] Database connection url not found\033[0m"
                   << std::endl;
       }
+
       std::string connectionUrl =
           config["connection_url"].get<std::string>();
 

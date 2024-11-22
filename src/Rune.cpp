@@ -18,7 +18,6 @@ void server(std::stop_token stoken, bool &shouldReload,
 
   while (!stoken.stop_requested()) {
     if (instantiateRoutes) {
-      std::cout << &instantiateRoutes << std::endl;
       instantiateRoutes(listener, router);
     }
 
@@ -279,9 +278,13 @@ void watchFiles() {
       (DatabaseInfo *)mmap(nullptr, sizeof(DatabaseInfo),
                            PROT_READ | PROT_WRITE, MAP_SHARED, fdm, 0);
 
-  strncpy(dbState->dbConfig, config["database"].dump().c_str(),
+  memset(dbState->dbConfig, 0, sizeof(dbState->dbConfig));
+
+  strncpy(dbState->dbConfig, config["database"].dump().data(),
           config["database"].dump().length());
 
+  std::cout << dbState->dbConfig << std::endl;
+  
   std::jthread serverThread(server, std::ref(shouldReload),
                             std::ref(reloadMutex));
 
@@ -325,6 +328,10 @@ void watchFiles() {
       }
 
       populateRoutes(headers);
+
+      if (config.contains("database")) {
+        reflectModels(config);
+      }
 
       system(std::string("rm -rf " +
                          config["server_location"].get<std::string>() + "/out")

@@ -89,3 +89,87 @@ struct soci::type_conversion<User> {
   }
 };
 
+class Post {
+public:
+  Post() = default;
+  ~Post() = default;
+
+	std::string title;
+	std::string description;
+
+
+  static std::vector<Post> SelectAll() {
+		soci::session* sql = Database::GetInstance()->GetSession();
+		soci::rowset<Post> modelsRS = (sql->prepare << "SELECT * FROM Posts");
+		std::vector<Post> models;
+		std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
+		return models;
+	}
+	static std::vector<Post> SelectByTitle(const std::string& title) {
+		soci::session* sql = Database::GetInstance()->GetSession();
+		soci::rowset<Post> modelsRS = (sql->prepare << "SELECT * FROM Posts WHERE title = :title", soci::use(title));
+		std::vector<Post> models;
+		std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
+		return models;
+	}
+	static std::vector<Post> SelectByDescription(const std::string& description) {
+		soci::session* sql = Database::GetInstance()->GetSession();
+		soci::rowset<Post> modelsRS = (sql->prepare << "SELECT * FROM Posts WHERE description = :description", soci::use(description));
+		std::vector<Post> models;
+		std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
+		return models;
+	}
+	static Post Insert(const Post& post) {
+		soci::session* sql = Database::GetInstance()->GetSession();
+		Post model;
+		*sql << "INSERT INTO Posts (title, description) VALUES (:title, :description) RETURNING * ", soci::use(post), soci::into(model);
+		return model;
+	}
+	static std::vector<Post> DeleteByTitle(const std::string& title) {
+		soci::session* sql = Database::GetInstance()->GetSession();
+		std::vector<Post> models;
+		soci::rowset<Post> modelRS = (sql->prepare << "DELETE FROM Posts WHERE title = :title RETURNING *", soci::use(title));
+		std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
+		return models;
+	}
+	static std::vector<Post> DeleteByDescription(const std::string& description) {
+		soci::session* sql = Database::GetInstance()->GetSession();
+		std::vector<Post> models;
+		soci::rowset<Post> modelRS = (sql->prepare << "DELETE FROM Posts WHERE description = :description RETURNING *", soci::use(description));
+		std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
+		return models;
+	}
+	static std::vector<Post> UpdateByTitle(const std::string& title, const Post& post) {		soci::session* sql = Database::GetInstance()->GetSession();
+		std::vector<Post> models;
+		soci::rowset<Post> modelRS = (sql->prepare << "UPDATE Posts SET title=:title, description=:description WHERE title=:Title_ RETURNING *", soci::use(post.title), soci::use(post.description), soci::use(title));
+		std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
+		return models;
+	}
+	static std::vector<Post> UpdateByDescription(const std::string& description, const Post& post) {		soci::session* sql = Database::GetInstance()->GetSession();
+		std::vector<Post> models;
+		soci::rowset<Post> modelRS = (sql->prepare << "UPDATE Posts SET title=:title, description=:description WHERE description=:Description_ RETURNING *", soci::use(post.title), soci::use(post.description), soci::use(description));
+		std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
+		return models;
+	}
+
+};
+
+
+template<>
+struct soci::type_conversion<Post> {
+  typedef soci::values base_type;
+
+  static void from_base(soci::values const& v, soci::indicator ind, Post& p) {
+		p.title = v.get<std::string>("title");
+		p.description = v.get<std::string>("description");
+
+  }
+
+  static void to_base(const Post& p, soci::values& v, soci::indicator& ind) {
+		v.set("title", p.title);
+		v.set("description", p.description);
+
+    ind = soci::i_ok;
+  }
+};
+

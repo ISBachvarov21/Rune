@@ -1,9 +1,3 @@
-/*
- * TODO: need to compile server files when files are modified
- *       need to reload server dll when files are modified
- *
- *       need to add server/routes header parsing
-*/
 #include "../include/Rune.hpp"
 
 int main(int argc, char **argv) {
@@ -37,5 +31,13 @@ int main(int argc, char **argv) {
     // run the Rune project
     std::cout << "Running Rune project..." << std::endl;
     watchFiles();
+  }
+  else if (std::string(argv[1]) == "--migrate") {
+    // run the migrations
+    json config = loadConfig();
+    migrateDB(config);
+  }
+  else {
+    std::cout << "Invalid option!" << std::endl;
   }
 }

@@ -2,3 +2,9 @@ model User : Users {
   name : String
   age : Int
 }
+
+model Post : Posts {
+  title : String
+  description : String
+  date : Date
+}
