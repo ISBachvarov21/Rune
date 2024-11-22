@@ -3,4 +3,4 @@ CREATE TABLE users (
 	age INTEGER
 );
 
-ALTER TABLE posts ADD COLUMN date DATE, ivoegei BOOLEAN;
+ALTER TABLE posts ADD COLUMN date DATE;
