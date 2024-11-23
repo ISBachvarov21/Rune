@@ -5,6 +5,5 @@ model User : Users {
 
 model Post : Posts {
   title : String
-  description : String
-  date : Date
+  is_deleted : Bool
 }

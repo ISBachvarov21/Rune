@@ -442,6 +442,38 @@ void migrateDB(json config) {
     return;
   }
 
+  if (!config["database"].contains("provider")) {
+    std::cerr << "\033[1;31m[-] Database provider not found\033[0m"
+              << std::endl;
+    return;
+  }
+
+  if (!config["database"].contains("host")) {
+    std::cerr << "\033[1;31m[-] Database host not found\033[0m" << std::endl;
+    return;
+  }
+
+  if (!config["database"].contains("port")) {
+    std::cerr << "\033[1;31m[-] Database port not found\033[0m" << std::endl;
+    return;
+  }
+
+  if (!config["database"].contains("database")) {
+    std::cerr << "\033[1;31m[-] Database name not found\033[0m" << std::endl;
+    return;
+  }
+
+  if (!config["database"].contains("user")) {
+    std::cerr << "\033[1;31m[-] Database user not found\033[0m" << std::endl;
+    return;
+  }
+
+  if (!config["database"].contains("password")) {
+    std::cerr << "\033[1;31m[-] Database password not found\033[0m"
+              << std::endl;
+    return;
+  }
+
   std::string modelsLocation =
       config["database"]["models_location"].get<std::string>();
 
@@ -454,6 +486,8 @@ void migrateDB(json config) {
   std::vector<std::pair<std::string, std::string>> modelDefinitions;
   std::vector<std::vector<std::pair<std::string, std::string>>>
       fieldDefinitions;
+  std::vector<std::vector<std::pair<std::string, std::string>>>
+      fieldAttributes;
 
   if ((dir = opendir(modelsLocation.c_str())) != NULL) {
     while ((ent = readdir(dir)) != NULL) {
@@ -466,78 +500,21 @@ void migrateDB(json config) {
   }
 
 #elif defined(_WIN32)
-  std::cout << "\033[1;31mLINE 329 MODEL REFLECTION\033[0m" << std::endl;
+  std::cout << "\033[1;31mLINE 503 MODEL REFLECTION\033[0m" << std::endl;
 #endif
 
-  if (!config["database"].contains("connection_url")) {
-    std::cerr << "\033[1;31m[-] Database connection url not found\033[0m"
-              << std::endl;
-    return;
-  }
-
-  std::string connectionUrl = config["database"]["connection_url"].get<std::string>();
-
-  size_t providerSeparation = connectionUrl.find("://");
-
-  if (providerSeparation == std::string::npos) {
-    std::cerr << "\033[1;31m[-] Database provider not found\033[0m"
-              << std::endl;
-    return;
-  }
-
-  std::string provider = connectionUrl.substr(0, providerSeparation);
+  std::string provider = config["database"]["provider"].get<std::string>();
+  std::string host = config["database"]["host"].get<std::string>();
+  std::string port = config["database"]["port"].get<std::string>();
+  std::string database = config["database"]["database"].get<std::string>();
+  std::string user = config["database"]["user"].get<std::string>();
+  std::string password = config["database"]["password"].get<std::string>();
 
   if (provider != "postgresql") {
     std::cerr << "\033[1;31m[-] Database provider not supported\033[0m"
               << std::endl;
     return;
   }
-
-  size_t userSeparation = connectionUrl.find(":", providerSeparation + 3);
-
-  if (userSeparation == std::string::npos) {
-    std::cerr << "\033[1;31m[-] Database user not found\033[0m" << std::endl;
-    return;
-  }
-
-  size_t passwordSeparation = connectionUrl.find("@", userSeparation + 1);
-
-  if (passwordSeparation == std::string::npos) {
-    std::cerr << "\033[1;31m[-] Database password not found\033[0m"
-              << std::endl;
-    return;
-  }
-
-  std::string user = connectionUrl.substr(
-      providerSeparation + 3, userSeparation - providerSeparation - 3);
-  std::string password = connectionUrl.substr(
-      userSeparation + 1, passwordSeparation - userSeparation - 1);
-
-  size_t hostSeparation = connectionUrl.find(":", passwordSeparation + 1);
-
-  if (hostSeparation == std::string::npos) {
-    std::cerr << "\033[1;31m[-] Database host not found\033[0m" << std::endl;
-    return;
-  }
-
-  size_t portSeparation = connectionUrl.find("/", hostSeparation + 1);
-
-  if (portSeparation == std::string::npos) {
-    std::cerr << "\033[1;31m[-] Database port not found\033[0m" << std::endl;
-    return;
-  }
-
-  std::string host = connectionUrl.substr(
-      passwordSeparation + 1, hostSeparation - passwordSeparation - 1);
-  std::string port = connectionUrl.substr(hostSeparation + 1,
-                                          portSeparation - hostSeparation - 1);
-
-  if (connectionUrl.size() - 1 <= portSeparation) {
-    std::cerr << "\033[1;31m[-] Database name not found\033[0m" << std::endl;
-    return;
-  }
-
-  std::string database = connectionUrl.substr(portSeparation + 1);
 
   std::string connectionString = "dbname=" + database + " user=" + user +
                                  " password=" + password + " host=" + host +
@@ -644,6 +621,8 @@ void migrateDB(json config) {
         } else {
           std::string fieldName = "";
           std::string fieldType = "";
+          std::vector<std::pair<std::string, std::string>> fieldAttributes;
+
           bool foundColon = false;
           int pos = -1;
 
@@ -687,6 +666,13 @@ void migrateDB(json config) {
               fieldType += token;
             }
           }
+
+          // TODO: complete
+          // std::pair<std::string, std::string> temp; 
+          // for (auto token : line.substr(pos)) {
+          //   ++pos;
+          //   if (std::isspace(token) && )
+          // }
 
           if (fieldType.empty() && foundColon) {
             std::cerr << "Expected field type after colon at " << path << ":"
@@ -790,13 +776,13 @@ void migrateDB(json config) {
       }
 
       if (!extraFields.empty()) {
-        migration += "ALTER TABLE " + tableName + " DROP COLUMN ";
+        migration += "ALTER TABLE " + tableName;
         
         for (auto [fieldName, fieldType] : extraFields) {
-          migration += fieldName + ", ";
+          migration += " DROP COLUMN " + fieldName + ", ";
         }
         
-        migration.replace(migration.find_last_of(","), 2, ";");
+        migration.replace(migration.find_last_of(","), 2, ";\n");
       }
     }
 

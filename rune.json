@@ -5,7 +5,12 @@
 	"endpoint_folder": "routes",
 
   "database": {
-    "connection_url": "postgresql://postgres:postgres@localhost:5432/rune",
+    "provider": "postgresql",
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres",
+    "password": "postgres",
+    "database": "rune",
     "models_location": "./models"
   }
 }

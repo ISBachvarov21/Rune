@@ -1,6 +1,1 @@
-CREATE TABLE users (
-	name TEXT,
-	age INTEGER
-);
-
-ALTER TABLE posts ADD COLUMN date DATE;
+ALTER TABLE posts ADD COLUMN is_deleted BOOLEAN;ALTER TABLE posts DROP COLUMN date, description;
