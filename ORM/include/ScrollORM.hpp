@@ -6,6 +6,7 @@
 #include <string>
 #include <fstream>
 #include <iostream>
+#include <filesystem>
 
 #if defined(__linux__) || defined(__APPLE__)
 #include <unistd.h>

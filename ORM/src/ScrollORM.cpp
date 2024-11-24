@@ -432,107 +432,57 @@ void reflectModels(json config) {
   modelsFileOut.close();
 }
 
-void migrateDB(json config) {
+std::string checkConfig(json& config) {
   if (!config.contains("database")) {
-    return;
+    return "\033[1;31m[-] Database configuration not found\033[0m";
   }
 
   if (!config["database"].contains("models_location")) {
-    std::cerr << "\033[1;31m[-] Models location not found\033[0m" << std::endl;
-    return;
+    return "\033[1;31m[-] Models location not found\033[0m";
   }
 
   if (!config["database"].contains("provider")) {
-    std::cerr << "\033[1;31m[-] Database provider not found\033[0m"
-              << std::endl;
-    return;
+    return "\033[1;31m[-] Database provider not found\033[0m";
   }
 
   if (!config["database"].contains("host")) {
-    std::cerr << "\033[1;31m[-] Database host not found\033[0m" << std::endl;
-    return;
+    return "\033[1;31m[-] Database host not found\033[0m";
   }
 
   if (!config["database"].contains("port")) {
-    std::cerr << "\033[1;31m[-] Database port not found\033[0m" << std::endl;
-    return;
+    return "\033[1;31m[-] Database port not found\033[0m";
   }
 
   if (!config["database"].contains("database")) {
-    std::cerr << "\033[1;31m[-] Database name not found\033[0m" << std::endl;
-    return;
+    return "\033[1;31m[-] Database name not found\033[0m";
   }
 
   if (!config["database"].contains("user")) {
-    std::cerr << "\033[1;31m[-] Database user not found\033[0m" << std::endl;
-    return;
+    return "\033[1;31m[-] Database user not found\033[0m";
   }
 
   if (!config["database"].contains("password")) {
-    std::cerr << "\033[1;31m[-] Database password not found\033[0m"
-              << std::endl;
-    return;
+    return "\033[1;31m[-] Database password not found\033[0m";
   }
 
-  std::string modelsLocation =
-      config["database"]["models_location"].get<std::string>();
+  return "";
+}
 
-  std::vector<std::string> modelFiles;
-
-#if defined(__linux__) || defined(__APPLE__)
-  DIR *dir;
-  dirent *ent;
-
-  std::vector<std::pair<std::string, std::string>> modelDefinitions;
-  std::vector<std::vector<std::pair<std::string, std::string>>>
-      fieldDefinitions;
-  std::vector<std::vector<std::pair<std::string, std::string>>>
-      fieldAttributes;
-
-  if ((dir = opendir(modelsLocation.c_str())) != NULL) {
-    while ((ent = readdir(dir)) != NULL) {
-      if (ent->d_type == DT_REG &&
-          ((std::string)ent->d_name).find(".scrl") != std::string::npos) {
-        modelFiles.push_back(ent->d_name);
-      }
-    }
-    closedir(dir);
-  }
-
-#elif defined(_WIN32)
-  std::cout << "\033[1;31mLINE 503 MODEL REFLECTION\033[0m" << std::endl;
-#endif
-
-  std::string provider = config["database"]["provider"].get<std::string>();
-  std::string host = config["database"]["host"].get<std::string>();
-  std::string port = config["database"]["port"].get<std::string>();
-  std::string database = config["database"]["database"].get<std::string>();
-  std::string user = config["database"]["user"].get<std::string>();
-  std::string password = config["database"]["password"].get<std::string>();
-
-  if (provider != "postgresql") {
-    std::cerr << "\033[1;31m[-] Database provider not supported\033[0m"
-              << std::endl;
-    return;
-  }
-
-  std::string connectionString = "dbname=" + database + " user=" + user +
-                                 " password=" + password + " host=" + host +
-                                 " port=" + port;
-
-  for (auto model : modelFiles) {
-    std::string path = modelsLocation + "/" + model;
+json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocation) {
+  json models;
+  for (auto modelFile : modelFiles) {
+    std::string path = modelsLocation + "/" + modelFile;
     std::ifstream file(path);
     std::string line;
 
     if (!file.is_open()) {
       std::cerr << "Error opening file: " << path << std::endl;
-      return;
+      return json();
     }
 
     unsigned int lineCount = 0;
     int inModel = -1;
-    std::vector<std::pair<std::string, std::string>> fields;
+    std::string currentModel = "";
 
     while (std::getline(file, line)) {
       ++lineCount;
@@ -556,14 +506,14 @@ void migrateDB(json config) {
             } else {
               std::cerr << "Expected name for model at " << path << ":"
                         << lineCount << ", got: '" << token << "'" << std::endl;
-              return;
+              return json();
             }
           }
 
           if (modelName.empty() || modelName == "model") {
             std::cerr << "Invalid or empty model name at " << path << ":"
                       << lineCount << std::endl;
-            return;
+            return json();
           }
 
           bool foundColon = false;
@@ -581,7 +531,7 @@ void migrateDB(json config) {
           if (!foundColon) {
             std::cerr << "Expected colon after model name at " << path << ":"
                       << lineCount << std::endl;
-            return;
+            return json();
           }
 
           std::string tableName;
@@ -599,29 +549,29 @@ void migrateDB(json config) {
             } else {
               std::cerr << "Expected table name for model at " << path << ":"
                         << lineCount << ", got: '" << token << "'" << std::endl;
-              return;
+              return json();
             }
           }
 
           if (tableName.empty() || tableName == ":" || tableName == "model") {
             std::cerr << "Invalid or empty table name at " << path << ":"
                       << lineCount << std::endl;
-            return;
+            return json();
           }
-          modelDefinitions.push_back(std::make_pair(modelName, tableName));
+
+          currentModel = modelName;  
+          models[modelName]["table"] = tableName;
           inModel = lineCount;
-          fields.clear();
         }
       }
 
       if (inModel != -1 && lineCount > inModel) {
         if (line.find("}") != std::string::npos) {
           inModel = -1;
-          fieldDefinitions.push_back(fields);
-        } else {
+        } 
+        else {
           std::string fieldName = "";
           std::string fieldType = "";
-          std::vector<std::pair<std::string, std::string>> fieldAttributes;
 
           bool foundColon = false;
           int pos = -1;
@@ -649,11 +599,11 @@ void migrateDB(json config) {
           if (!fieldName.empty() && !foundColon) {
             std::cerr << "Expected colon after field name at " << path << ":"
                       << lineCount << std::endl;
-            return;
+            return json();
           } else if (fieldName.empty() && foundColon) {
             std::cerr << "Expected field name before colon at " << path << ":"
                       << lineCount << std::endl;
-            return;
+            return json();
           }
 
           for (auto token : line.substr(pos)) {
@@ -667,23 +617,135 @@ void migrateDB(json config) {
             }
           }
 
-          // TODO: complete
-          // std::pair<std::string, std::string> temp; 
-          // for (auto token : line.substr(pos)) {
-          //   ++pos;
-          //   if (std::isspace(token) && )
-          // }
-
           if (fieldType.empty() && foundColon) {
             std::cerr << "Expected field type after colon at " << path << ":"
                       << lineCount << std::endl;
-            return;
+            return json();
           } else if (!fieldName.empty() && !fieldType.empty() && foundColon) {
-            fields.push_back(std::make_pair(fieldName, fieldType));
+            models[currentModel]["fields"][fieldName]["type"] = fieldType;
+          }
+
+          // model : table {
+          //  field : type @attribute value @attribute value
+          // }
+          size_t attributeIndex;
+          while ((attributeIndex = line.find("@", attributeIndex)) != std::string::npos) {
+            std::string attribute = "";
+            std::string value = "";
+            
+            for (auto token : line.substr(attributeIndex)) {
+              if (token == '@') {
+                continue;
+              }
+              else if (std::isspace(token) && attribute.empty()) {
+                continue;
+              }
+              else if (std::isspace(token) && !attribute.empty()) {
+                break;
+              }
+              else {
+                attribute += token;
+              }
+            }
+
+            for (auto token : line.substr(attributeIndex + attribute.size())) {
+              if (token == '@') {
+                continue;
+              }
+              else if (std::isspace(token) && value.empty()) {
+                continue;
+              }
+              else if (std::isspace(token) && !value.empty()) {
+                break;
+              }
+              else {
+                value += token;
+              }
+            }
+            
+            // Current implementation supports default, pk, unique, nullable,
+            // TODO: add support for fk, check, index, autoincrement
+
+            if (attribute.empty()) {
+              std::cerr << "Invalid attribute at " << path << ":" << lineCount
+                        << std::endl;
+              return json();
+            }
+            if (value.empty()) {
+              if (attribute == "default") {
+                std::cerr << "Expected value for default attribute at " << path
+                          << ":" << lineCount << std::endl;
+                return json();
+              }
+            }
+
+            models[currentModel]["fields"][fieldName]["attributes"][attribute] = value;
           }
         }
       }
     }
+  }
+
+  return models;
+}
+
+void migrateDB(json config) {
+  std::string configCheck = checkConfig(config);
+
+  if (!configCheck.empty()) {
+    std::cerr << configCheck << std::endl;
+    return;
+  }
+
+  std::string modelsLocation =
+      config["database"]["models_location"].get<std::string>();
+
+  std::vector<std::string> modelFiles;
+
+  for (const auto& entry : std::filesystem::directory_iterator(modelsLocation)) {
+    if (entry.path().extension() == ".scrl") {
+      modelFiles.push_back(entry.path().filename());
+    }
+  }
+
+  std::string provider = config["database"]["provider"].get<std::string>();
+  std::string host = config["database"]["host"].get<std::string>();
+  std::string port = std::to_string(config["database"]["port"].get<int>());
+  std::string database = config["database"]["database"].get<std::string>();
+  std::string user = config["database"]["user"].get<std::string>();
+  std::string password = config["database"]["password"].get<std::string>();
+
+  if (provider != "postgresql") {
+    std::cerr << "\033[1;31m[-] Database provider not supported\033[0m"
+              << std::endl;
+    return;
+  }
+
+  std::string connectionString = "dbname=" + database + " user=" + user +
+                                 " password=" + password + " host=" + host +
+                                 " port=" + port;
+
+  /*
+   *[
+   *  "<model name>": {
+   *    "table": "<table name>",
+   *    "fields": [
+   *      "<field name>": {
+   *        "type": "<field type>",
+   *        "attributes": [
+   *          "<attribute name>": "<attribute value>"
+   *        ]
+   *      },
+   *      ...
+   *    ]
+   *  },
+   *  ...
+   *]
+  */
+  json models = reflectModels(modelFiles, modelsLocation);
+
+  if (models.empty()) {
+    return;
   }
 
   std::string migrationFile =
@@ -696,8 +758,6 @@ void migrateDB(json config) {
     return;
   }
 
-  std::cout << "Migrating database..." << std::endl;
-
   soci::session sql;
   sql.open(soci::postgresql, connectionString);
 
@@ -705,14 +765,8 @@ void migrateDB(json config) {
  
   sql.get_table_names(), soci::into(tables);
 
-  for (auto& table : tables) {
-    std::cout << table << std::endl;
-  }
-
-  for (size_t i = 0; i < modelDefinitions.size(); ++i) {
-    auto [modelName, tableName] = modelDefinitions[i];
-    auto modelFields = fieldDefinitions[i];
-    
+  for (auto& [modelName, model] : models.items()) {
+    std::string tableName = model["table"].get<std::string>();    
     std::cout << "Migrating table: " << tableName << std::endl;
 
     std::transform(tableName.begin(), tableName.end(), tableName.begin(), ::tolower);
@@ -722,7 +776,8 @@ void migrateDB(json config) {
     if (std::find(tables.begin(), tables.end(), tableName) == tables.end()) {
       migration = "CREATE TABLE " + tableName + " (\n";
 
-      for (auto [fieldName, fieldType] : modelFields) {
+      for (auto [fieldName, field] : model["fields"].items()) {
+        std::string fieldType = field["type"].get<std::string>();
         migration +=
             "\t" + fieldName + " " + dataTypes.at(fieldType).second + ",\n";
       }
@@ -733,53 +788,48 @@ void migrateDB(json config) {
       // check if the table has all the fields
       // if not, add the missing fields
       // if the table has extra fields, remove them
-      // if the table has the same fields, do nothing
 
       soci::rowset<soci::row> tableFieldsRS = (sql.prepare << "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = :table_name", soci::use(tableName));
 
-      std::vector<std::pair<std::string, std::string>> tableFields;
+      std::unordered_map<std::string, std::string> tableFields;
 
       for (soci::rowset<soci::row>::const_iterator field = tableFieldsRS.begin(); field != tableFieldsRS.end(); ++field) {
-        tableFields.push_back(std::make_pair(field->get<std::string>(0),
-                                             field->get<std::string>(1)));
+        tableFields[field->get<std::string>(0)] = field->get<std::string>(1);
       }
 
       std::vector<std::pair<std::string, std::string>> missingFields;
       std::vector<std::pair<std::string, std::string>> extraFields;
 
-      for (auto [fieldName, fieldType] : modelFields) {
-        if (std::find_if(tableFields.begin(), tableFields.end(),
-                         [fieldName](auto field) {
-                           return field.first == fieldName;
-                         }) == tableFields.end()) {
+      // TODO: fields whose types have changed should be updated
+      // TODO: fields whose attributes have changed should be updated
+      for (auto [fieldName, field] : model["fields"].items()) {
+        std::string fieldType = field["type"].get<std::string>();
+        if (!tableFields.contains(fieldName)) {
           missingFields.push_back(std::make_pair(fieldName, fieldType));
         }
       }
 
       for (auto [fieldName, fieldType] : tableFields) {
-        if (std::find_if(modelFields.begin(), modelFields.end(),
-                         [fieldName](auto field) {
-                           return field.first == fieldName;
-                         }) == modelFields.end()) {
+        if (!model["fields"].contains(fieldName)) {
           extraFields.push_back(std::make_pair(fieldName, fieldType));
         }
       }
       
-      if (!missingFields.empty()) {
-        migration += "ALTER TABLE " + tableName + " ADD COLUMN ";
-        
-        for (auto [fieldName, fieldType] : missingFields) {
-          migration += fieldName + " " + dataTypes.at(fieldType).second + ", ";
-        }
-        
-        migration.replace(migration.find_last_of(","), 2, ";");
-      }
-
       if (!extraFields.empty()) {
         migration += "ALTER TABLE " + tableName;
         
         for (auto [fieldName, fieldType] : extraFields) {
           migration += " DROP COLUMN " + fieldName + ", ";
+        }
+        
+        migration.replace(migration.find_last_of(","), 2, ";\n");
+      }
+
+      if (!missingFields.empty()) {
+        migration += "ALTER TABLE " + tableName;
+        
+        for (auto [fieldName, fieldType] : missingFields) {
+          migration += " ADD COLUMN " + fieldName + " " + dataTypes.at(fieldType).second + ", ";
         }
         
         migration.replace(migration.find_last_of(","), 2, ";\n");

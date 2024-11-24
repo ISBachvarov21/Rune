@@ -1,1 +1,1 @@
-ALTER TABLE posts ADD COLUMN is_deleted BOOLEAN;ALTER TABLE posts DROP COLUMN date, description;
+ALTER TABLE posts ADD COLUMN is_deleted BOOLEAN;
