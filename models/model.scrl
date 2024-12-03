@@ -1,11 +1,17 @@
 model User : Users {
   name : String
   age : Int
+
 }
 
 model Post : Posts {
   title : String
   description : String
   date : Date
-  is_deleted : Bool
+}
+
+model AttrTest : AttrTests {
+  pk : Int @pk
+  nullable : Int @nullable
+  default : String @default 'Test default value'
 }

@@ -11,6 +11,17 @@ const std::unordered_map<std::string, std::pair<std::string, std::string>>
                  {"Binary", {"std::string", "BYTEA"}},
                  {"UUID", {"std::string", "UUID"}}};
 
+const std::unordered_map<std::string, std::string> attributeTypes = {
+    {"default", "DEFAULT"},
+    {"pk", "PRIMARY KEY"},
+    {"unique", "UNIQUE"},
+    {"nullable", "NOT NULL"},
+    {"fk", "FOREIGN KEY"},
+    {"check", "CHECK"},
+    {"index", "INDEX"},
+    {"autoincrement", "AUTOINCREMENT"}
+};
+
 const std::string modelsFileTemplate = R"(
 #include <string>
 #include <vector>
@@ -493,7 +504,6 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
           std::string modelName;
           size_t pos = modelDefinitionIndex + 5;
           bool foundName = false;
-
           for (auto token : line.substr(pos)) {
             ++pos;
             if (isalnum(token) || token == '_' || token == '-') {
@@ -575,6 +585,10 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
 
           bool foundColon = false;
           int pos = -1;
+          
+          if (line.size() == 0) {
+            continue;
+          }
 
           for (auto token : line) {
             ++pos;
@@ -587,7 +601,7 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
               fieldName += token;
             }
           }
-
+          
           for (auto token : line.substr(pos)) {
             ++pos;
             if (token == ':') {
@@ -624,61 +638,78 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
           } else if (!fieldName.empty() && !fieldType.empty() && foundColon) {
             models[currentModel]["fields"][fieldName]["type"] = fieldType;
           }
-
+          
           // model : table {
           //  field : type @attribute value @attribute value
           // }
-          size_t attributeIndex;
-          while ((attributeIndex = line.find("@", attributeIndex)) != std::string::npos) {
-            std::string attribute = "";
-            std::string value = "";
-            
-            for (auto token : line.substr(attributeIndex)) {
-              if (token == '@') {
-                continue;
-              }
-              else if (std::isspace(token) && attribute.empty()) {
-                continue;
-              }
-              else if (std::isspace(token) && !attribute.empty()) {
-                break;
-              }
-              else {
-                attribute += token;
-              }
-            }
+          // TODO: FIX THIS
+          // value e poslednata bukva ot poleto fix pls
+          // may God be with you
+          
 
-            for (auto token : line.substr(attributeIndex + attribute.size())) {
-              if (token == '@') {
-                continue;
-              }
-              else if (std::isspace(token) && value.empty()) {
-                continue;
-              }
-              else if (std::isspace(token) && !value.empty()) {
-                break;
-              }
-              else {
-                value += token;
-              }
+          std::string attribute = "";
+          std::string value = "";
+         
+          for (auto token : line.substr(pos)) {
+            ++pos;
+            if (token == '@' && attribute.empty()) {
+              continue;
             }
-            
-            // Current implementation supports default, pk, unique, nullable,
-            // TODO: add support for fk, check, index, autoincrement
+            else if (std::isspace(token) && attribute.empty()) {
+              continue;
+            }
+            else if (std::isspace(token) && !attribute.empty()) {
+              break;
+            }
+            else {
+              attribute += token;
+            }
+          }
 
-            if (attribute.empty()) {
-              std::cerr << "Invalid attribute at " << path << ":" << lineCount
-                        << std::endl;
+          bool inString = false;
+          for (auto token : line.substr(pos)) {
+            if (token == '@') {
+              std::cerr << "Unexpected '@' at " << path << ":" << lineCount << std::endl;
               return json();
             }
-            if (value.empty()) {
-              if (attribute == "default") {
-                std::cerr << "Expected value for default attribute at " << path
-                          << ":" << lineCount << std::endl;
-                return json();
-              }
+            else if (token == '\'' && !inString) {
+              inString = true;
+              value += token;
+              continue;
             }
+            else if (token == '\'' && inString) {
+              inString = false;
+              value += token;
+              break;
+            }
+            else if (std::isspace(token) && value.empty()) {
+              continue;
+            }
+            else if (std::isspace(token) && !value.empty() && !inString) {
+              break;
+            }
+            else {
+              value += token;
+            }
+          }
+       
+          // Current implementation supports default, pk, unique, nullable,
+          // TODO: add support for fk, check, index, autoincrement
 
+          if (!attribute.empty() && !attributeTypes.contains(attribute)) {
+            std::cerr << "Invalid attribute '" << attribute << "' at " << path << ":" << lineCount
+                      << std::endl;
+            return json();
+          }
+          if (value.empty()) {
+            if (attribute == "default") {
+              std::cerr << "Expected value for '" << attribute << "' at " << path
+                        << ":" << lineCount << std::endl;
+              return json();
+            }
+          }
+
+          if (!attribute.empty()) {
             models[currentModel]["fields"][fieldName]["attributes"][attribute] = value;
           }
         }
@@ -768,7 +799,8 @@ void migrateDB(json config) {
   for (auto& [modelName, model] : models.items()) {
     std::string tableName = model["table"].get<std::string>();    
     std::cout << "Migrating table: " << tableName << std::endl;
-
+    
+    std::cout << model.dump(4) << std::endl;
     std::transform(tableName.begin(), tableName.end(), tableName.begin(), ::tolower);
 
     std::string migration = "";
@@ -778,8 +810,23 @@ void migrateDB(json config) {
 
       for (auto [fieldName, field] : model["fields"].items()) {
         std::string fieldType = field["type"].get<std::string>();
+        json attributes = field["attributes"];
+        std::string attributesStr = "";
+
+        if (!attributes.empty()) {
+          for (auto [attribute, value] : attributes.items()) {
+            if (value.get<std::string>().empty()) {
+              attributesStr += attributeTypes.at(attribute) + " ";
+            }
+            else {
+              attributesStr += attributeTypes.at(attribute) + " " + value.get<std::string>() + " ";
+            }
+          }
+          attributesStr.pop_back();
+        }
+
         migration +=
-            "\t" + fieldName + " " + dataTypes.at(fieldType).second + ",\n";
+            "\t" + fieldName + " " + dataTypes.at(fieldType).second + " " + attributesStr + ",\n";
       }
 
       migration.replace(migration.find_last_of(","), 1, "\n);\n");
@@ -800,12 +847,20 @@ void migrateDB(json config) {
       std::vector<std::pair<std::string, std::string>> missingFields;
       std::vector<std::pair<std::string, std::string>> extraFields;
 
-      // TODO: fields whose types have changed should be updated
       // TODO: fields whose attributes have changed should be updated
       for (auto [fieldName, field] : model["fields"].items()) {
         std::string fieldType = field["type"].get<std::string>();
         if (!tableFields.contains(fieldName)) {
           missingFields.push_back(std::make_pair(fieldName, fieldType));
+        }
+        else {
+          std::string tableFieldType = tableFields[fieldName];
+          std::transform(tableFieldType.begin(), tableFieldType.end(), tableFieldType.begin(), ::toupper);
+
+          if (tableFieldType != dataTypes.at(fieldType).second) {
+            missingFields.push_back(std::make_pair(fieldName, fieldType));
+            extraFields.push_back(std::make_pair(fieldName, tableFields[fieldName]));
+          }
         }
       }
 
@@ -829,7 +884,13 @@ void migrateDB(json config) {
         migration += "ALTER TABLE " + tableName;
         
         for (auto [fieldName, fieldType] : missingFields) {
-          migration += " ADD COLUMN " + fieldName + " " + dataTypes.at(fieldType).second + ", ";
+          std::string attributes = "";
+          if (model["fields"][fieldName].contains("attributes")) {
+            for (auto [attribute, value] : model["fields"][fieldName]["attributes"].items()) {
+              attributes += attributeTypes.at(attribute) + " " + value.get<std::string>() + " ";
+            }
+          }
+          migration += " ADD COLUMN " + fieldName + " " + dataTypes.at(fieldType).second + " " + attributes + ", ";
         }
         
         migration.replace(migration.find_last_of(","), 2, ";\n");
