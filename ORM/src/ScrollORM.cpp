@@ -657,6 +657,7 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
           //
           // Current implementation supports default, pk, unique, nullable, fk,
           // TODO: add support for check, index
+          // TODO: add table-wide attributes (constraints, indexes, etc.)
           while ((pos = line.find('@', pos)) != std::string::npos) {
             std::string attribute = "";
             std::string value = "";
@@ -762,7 +763,7 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
   return models;
 }
 
-void migrateDB(json config) {
+void migrateDB(json config, std::string migrationName) {
   std::string configCheck = checkConfig(config);
 
   if (!configCheck.empty()) {
@@ -821,9 +822,15 @@ void migrateDB(json config) {
     return;
   }
 
+  std::string migrationPrefix = "migration_";
+
+  if (migrationName == "") {
+    migrationPrefix.pop_back();
+  }
+
   std::string migrationFile =
       config["database"]["models_location"].get<std::string>() +
-      "/migrations.sql";
+      migrationPrefix + migrationName + ".sql";
   std::ofstream migrationFileOut(migrationFile);
 
   if (!migrationFileOut.is_open()) {
@@ -939,10 +946,10 @@ void migrateDB(json config) {
         migration += "ALTER TABLE " + tableName;
         
         for (auto [fieldName, fieldType] : extraFields) {
-          migration += " DROP COLUMN " + fieldName + ", ";
+          migration += " DROP COLUMN " + fieldName + ",";
         }
         
-        migration.replace(migration.find_last_of(","), 2, ";\n");
+        migration.replace(migration.find_last_of(","), 1, ";\n");
       }
 
       if (!missingFields.empty()) {
@@ -953,12 +960,13 @@ void migrateDB(json config) {
           if (model["fields"][fieldName].contains("attributes")) {
             for (auto [attribute, value] : model["fields"][fieldName]["attributes"].items()) {
               attributes += attributeConversions.at(attribute) + " " + value.get<std::string>() + " ";
+              attributes.pop_back();
             }
           }
-          migration += " ADD COLUMN " + fieldName + " " + dataTypes.at(fieldType).second + " " + attributes + ", ";
+          migration += " ADD COLUMN " + fieldName + " " + dataTypes.at(fieldType).second + attributes + ",";
         }
         
-        migration.replace(migration.find_last_of(","), 2, ";\n");
+        migration.replace(migration.find_last_of(","), 1, ";\n");
       }
     }
 

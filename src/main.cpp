@@ -34,8 +34,14 @@ int main(int argc, char **argv) {
   }
   else if (std::string(argv[1]) == "--migrate") {
     // run the migrations
+    std::string migrationName = "";
+
+    if (argc == 3) {
+      migrationName = argv[2];
+    }
+
     json config = loadConfig();
-    migrateDB(config);
+    migrateDB(config, migrationName);
   }
   else {
     std::cout << "Invalid option!" << std::endl;

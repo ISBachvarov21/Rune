@@ -5,6 +5,7 @@ model User : Users {
 }
 
 model Post : Posts {
+  id : Int
   title : String
   description : String
   date : Date
