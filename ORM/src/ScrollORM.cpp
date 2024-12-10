@@ -11,14 +11,21 @@ const std::unordered_map<std::string, std::pair<std::string, std::string>>
                  {"Binary", {"std::string", "BYTEA"}},
                  {"UUID", {"std::string", "UUID"}}};
 
-const std::unordered_map<std::string, std::string> attributeTypes = {
+const std::unordered_map<std::string, std::string> attributeConversions = {
     {"default", "DEFAULT"},
     {"pk", "PRIMARY KEY"},
     {"unique", "UNIQUE"},
     {"nullable", "NOT NULL"},
-    {"fk", "FOREIGN KEY"},
-    {"check", "CHECK"},
+    {"fk", "FOREIGN KEY REFERENCES {{table}}({{field}})"},
+    {"check", "CHECK ({{condition}})"},
     {"index", "INDEX"},
+    {"autoincrement", "AUTOINCREMENT"}
+};
+
+const std::unordered_map<std::string, std::string> keyOnlyAttributes = {
+    {"pk", "PRIMARY KEY"},
+    {"unique", "UNIQUE"},
+    {"nullable", "NOT NULL"},
     {"autoincrement", "AUTOINCREMENT"}
 };
 
@@ -635,83 +642,118 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
             std::cerr << "Expected field type after colon at " << path << ":"
                       << lineCount << std::endl;
             return json();
-          } else if (!fieldName.empty() && !fieldType.empty() && foundColon) {
+          } 
+          else if (!fieldType.empty() && !dataTypes.contains(fieldType) && !models.contains(fieldType)) {
+            std::cerr << "Invalid field type '" << fieldType << "' at " << path << ":" << lineCount << std::endl;
+            return json();
+          }
+          else if (!fieldName.empty() && !fieldType.empty() && foundColon) {
             models[currentModel]["fields"][fieldName]["type"] = fieldType;
           }
           
           // model : table {
           //  field : type @attribute value @attribute value
           // }
-          // TODO: FIX THIS
-          // value e poslednata bukva ot poleto fix pls
-          // may God be with you
-          
+          //
+          // Current implementation supports default, pk, unique, nullable, fk,
+          // TODO: add support for check, index
+          while ((pos = line.find('@', pos)) != std::string::npos) {
+            std::string attribute = "";
+            std::string value = "";
+            std::vector<std::string> tupleValues;
+           
+            // attribute
+            for (auto token : line.substr(pos)) {
+              ++pos;
+              if (token == '@' && attribute.empty()) {
+                continue;
+              }
+              else if (std::isspace(token) && attribute.empty()) {
+                continue;
+              }
+              else if (std::isspace(token) && !attribute.empty()) {
+                break;
+              }
+              else {
+                attribute += token;
+              }
+            }
 
-          std::string attribute = "";
-          std::string value = "";
-         
-          for (auto token : line.substr(pos)) {
-            ++pos;
-            if (token == '@' && attribute.empty()) {
-              continue;
+            bool inString = false;
+            bool inTuple = false;
+ 
+            // value
+            for (auto token : line.substr(pos, line.find('@', pos) - pos)) {
+              ++pos;
+              if (token == '@' && !keyOnlyAttributes.contains(attribute)) {
+                std::cerr << "Unexpected '@' instead of value for '" << attribute << "' at " << path << ":" << lineCount << std::endl;
+                return json();
+              }
+              else if (token == '@' && keyOnlyAttributes.contains(attribute)) {
+                break;
+              }
+              else if (token == '\'' && !inString) {
+                inString = true;
+                value += token;
+                continue;
+              }
+              else if (token == '\'' && inString) {
+                inString = false;
+                value += token;
+                continue;
+              }
+              else if (token == '(' && !inTuple) {
+                inTuple = true;
+                continue;
+              }
+              else if (token == ')' && inTuple) {
+                inTuple = false;
+                tupleValues.push_back(value);
+                break;
+              }
+              else if (std::isspace(token) && value.empty()) {
+                continue;
+              }
+              else if (std::isspace(token) && !value.empty() && !inString && !inTuple) {
+                break;
+              }
+              else if (token == ',' && !value.empty() && inTuple) {
+                std::cout << "Tuple value: " << value << std::endl;
+                tupleValues.push_back(value);
+                value = "";
+                continue;
+              }
+              else {
+                value += token;
+              }
             }
-            else if (std::isspace(token) && attribute.empty()) {
-              continue;
-            }
-            else if (std::isspace(token) && !attribute.empty()) {
-              break;
-            }
-            else {
-              attribute += token;
-            }
-          }
 
-          bool inString = false;
-          for (auto token : line.substr(pos)) {
-            if (token == '@') {
-              std::cerr << "Unexpected '@' at " << path << ":" << lineCount << std::endl;
+            if (!attribute.empty() && !attributeConversions.contains(attribute)) {
+              std::cerr << "Invalid attribute '" << attribute << "' at " << path << ":" << lineCount
+                        << std::endl;
               return json();
             }
-            else if (token == '\'' && !inString) {
-              inString = true;
-              value += token;
-              continue;
-            }
-            else if (token == '\'' && inString) {
-              inString = false;
-              value += token;
-              break;
-            }
-            else if (std::isspace(token) && value.empty()) {
-              continue;
-            }
-            else if (std::isspace(token) && !value.empty() && !inString) {
-              break;
-            }
-            else {
-              value += token;
-            }
-          }
-       
-          // Current implementation supports default, pk, unique, nullable,
-          // TODO: add support for fk, check, index, autoincrement
 
-          if (!attribute.empty() && !attributeTypes.contains(attribute)) {
-            std::cerr << "Invalid attribute '" << attribute << "' at " << path << ":" << lineCount
-                      << std::endl;
-            return json();
-          }
-          if (value.empty()) {
-            if (attribute == "default") {
-              std::cerr << "Expected value for '" << attribute << "' at " << path
-                        << ":" << lineCount << std::endl;
-              return json();
+            if (value.empty()) {
+              if (attribute == "default") {
+                std::cerr << "Expected value for '" << attribute << "' at " << path
+                          << ":" << lineCount << std::endl;
+                return json();
+              }
             }
-          }
 
-          if (!attribute.empty()) {
-            models[currentModel]["fields"][fieldName]["attributes"][attribute] = value;
-          }
+            if (!attribute.empty()) {
+              if (!tupleValues.empty()) {
+                std::cout << tupleValues.size() << std::endl;
+                for (auto tupleValue : tupleValues) {
+                  models[currentModel]["fields"][fieldName]["attributes"][attribute].push_back(tupleValue);
+                }
+              }
+              else {
+                models[currentModel]["fields"][fieldName]["attributes"][attribute] = value;
+              }
+            }
+          } 
         }
       }
     }
@@ -757,7 +799,7 @@ void migrateDB(json config) {
                                  " port=" + port;
 
   /*
-   *[
+   *{
    *  "<model name>": {
    *    "table": "<table name>",
    *    "fields": [
@@ -771,7 +813,7 @@ void migrateDB(json config) {
    *    ]
    *  },
    *  ...
-   *]
+   *}
   */
   json models = reflectModels(modelFiles, modelsLocation);
 
@@ -810,16 +852,38 @@ void migrateDB(json config) {
 
       for (auto [fieldName, field] : model["fields"].items()) {
         std::string fieldType = field["type"].get<std::string>();
+        
         json attributes = field["attributes"];
         std::string attributesStr = "";
 
         if (!attributes.empty()) {
           for (auto [attribute, value] : attributes.items()) {
-            if (value.get<std::string>().empty()) {
-              attributesStr += attributeTypes.at(attribute) + " ";
+            if (attribute == "fk") {
+              if (value.type() != json::value_t::array) {
+                std::cerr << "Expected object for 'fk' attribute at " << modelName << ":" << fieldName << std::endl;
+                sql.close();
+                return;
+              }
+
+              if (value.size() != 2) {
+                std::cerr << "Expected 2 values inside tuple for 'fk' attribute at " << modelName << ":" << fieldName << std::endl;
+                sql.close();
+                return;
+              }
+
+              std::string fkTable = value[0].get<std::string>();
+              std::string fkField = value[1].get<std::string>();
+              std::string fk = attributeConversions.at(attribute);
+              fk.replace(fk.find("{{table}}"), 9, fkTable);
+              fk.replace(fk.find("{{field}}"), 9, fkField);
+
+              attributesStr += fk + " ";
+            }
+            else if (value.get<std::string>().empty()) {
+              attributesStr += attributeConversions.at(attribute) + " ";
             }
             else {
-              attributesStr += attributeTypes.at(attribute) + " " + value.get<std::string>() + " ";
+              attributesStr += attributeConversions.at(attribute) + " " + value.get<std::string>() + " ";
             }
           }
           attributesStr.pop_back();
@@ -887,7 +951,7 @@ void migrateDB(json config) {
           std::string attributes = "";
           if (model["fields"][fieldName].contains("attributes")) {
             for (auto [attribute, value] : model["fields"][fieldName]["attributes"].items()) {
-              attributes += attributeTypes.at(attribute) + " " + value.get<std::string>() + " ";
+              attributes += attributeConversions.at(attribute) + " " + value.get<std::string>() + " ";
             }
           }
           migration += " ADD COLUMN " + fieldName + " " + dataTypes.at(fieldType).second + " " + attributes + ", ";
