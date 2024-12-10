@@ -840,14 +840,15 @@ void migrateDB(json config) {
 
   for (auto& [modelName, model] : models.items()) {
     std::string tableName = model["table"].get<std::string>();    
+    std::string loweredTableName = tableName;
     std::cout << "Migrating table: " << tableName << std::endl;
     
     std::cout << model.dump(4) << std::endl;
-    std::transform(tableName.begin(), tableName.end(), tableName.begin(), ::tolower);
+    std::transform(loweredTableName.begin(), loweredTableName.end(), loweredTableName.begin(), ::tolower);
 
     std::string migration = "";
     
-    if (std::find(tables.begin(), tables.end(), tableName) == tables.end()) {
+    if (std::find(tables.begin(), tables.end(), loweredTableName) == tables.end()) {
       migration = "CREATE TABLE " + tableName + " (\n";
 
       for (auto [fieldName, field] : model["fields"].items()) {
@@ -900,7 +901,7 @@ void migrateDB(json config) {
       // if not, add the missing fields
       // if the table has extra fields, remove them
 
-      soci::rowset<soci::row> tableFieldsRS = (sql.prepare << "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = :table_name", soci::use(tableName));
+      soci::rowset<soci::row> tableFieldsRS = (sql.prepare << "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = :table_name", soci::use(loweredTableName));
 
       std::unordered_map<std::string, std::string> tableFields;
 
