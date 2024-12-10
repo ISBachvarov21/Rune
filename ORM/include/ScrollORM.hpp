@@ -25,4 +25,4 @@ using json = nlohmann::json;
 static std::vector<std::pair<std::string, std::vector<std::pair<std::string, std::string>>>> tables;
 
 EXPORT void reflectModels(json config);
-EXPORT void migrateDB(json config); 
+EXPORT void migrateDB(json config, std::string migationName); 

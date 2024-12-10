@@ -404,6 +404,10 @@ FodyWeavers.xsd
 *.filters
 *.sln
 
+# Migrations
+*.sql
+
+# CMake
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles

@@ -822,11 +822,14 @@ void migrateDB(json config, std::string migrationName) {
     return;
   }
 
-  std::string migrationPrefix = "migration_";
+  std::string migrationPrefix = "/migration_";
 
   if (migrationName == "") {
     migrationPrefix.pop_back();
   }
+
+  std::cout << config["database"]["models_location"].get<std::string>() +
+      migrationPrefix + migrationName + ".sql" << std::endl;
 
   std::string migrationFile =
       config["database"]["models_location"].get<std::string>() +
