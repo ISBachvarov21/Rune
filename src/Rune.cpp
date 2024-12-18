@@ -283,8 +283,6 @@ void watchFiles() {
   strncpy(dbState->dbConfig, config["database"].dump().data(),
           config["database"].dump().length());
 
-  std::cout << dbState->dbConfig << std::endl;
-  
   std::jthread serverThread(server, std::ref(shouldReload),
                             std::ref(reloadMutex));
 

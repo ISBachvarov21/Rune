@@ -5,15 +5,7 @@ model User : Users {
 }
 
 model Post : Posts {
-  id : Int
   title : String
   description : String
   date : Date
-}
-
-model AttrTest : AttrTests {
-  pk : Int @pk
-  nullable : Int @nullable
-  default : String @default 'Test default value'
-  fk : Int @fk (Posts, id)
 }

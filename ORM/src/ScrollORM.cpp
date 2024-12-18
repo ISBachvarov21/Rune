@@ -19,15 +19,13 @@ const std::unordered_map<std::string, std::string> attributeConversions = {
     {"fk", "FOREIGN KEY REFERENCES {{table}}({{field}})"},
     {"check", "CHECK ({{condition}})"},
     {"index", "INDEX"},
-    {"autoincrement", "AUTOINCREMENT"}
-};
+    {"autoincrement", "AUTOINCREMENT"}};
 
 const std::unordered_map<std::string, std::string> keyOnlyAttributes = {
     {"pk", "PRIMARY KEY"},
     {"unique", "UNIQUE"},
     {"nullable", "NOT NULL"},
-    {"autoincrement", "AUTOINCREMENT"}
-};
+    {"autoincrement", "AUTOINCREMENT"}};
 
 const std::string modelsFileTemplate = R"(
 #include <string>
@@ -66,6 +64,14 @@ struct soci::type_conversion<{{model name}}> {
 };
 )";
 
+void findAndReplace(std::string &str, const std::string &toReplace,
+                           const std::string &replaceWith) {
+  size_t pos = 0;
+  while ((pos = str.find(toReplace, pos)) != std::string::npos) {
+    str.replace(pos, toReplace.length(), replaceWith);
+  }
+}
+
 void reflectModels(json config) {
   if (!config.contains("database")) {
     return;
@@ -80,28 +86,17 @@ void reflectModels(json config) {
 
   std::string modelsLocation =
       config["database"]["models_location"].get<std::string>();
-  std::vector<std::string> modelFiles;
 
+  std::vector<std::string> modelFiles;
   std::string modelsFile = modelsFileTemplate;
   std::string models;
 
-#if defined(__linux__) || defined(__APPLE__)
-  DIR *dir;
-  dirent *ent;
-
-  if ((dir = opendir(modelsLocation.c_str())) != NULL) {
-    while ((ent = readdir(dir)) != NULL) {
-      if (ent->d_type == DT_REG &&
-          ((std::string)ent->d_name).find(".scrl") != std::string::npos) {
-        modelFiles.push_back(ent->d_name);
-      }
+  for (const auto &entry :
+       std::filesystem::directory_iterator(modelsLocation)) {
+    if (entry.path().extension() == ".scrl") {
+      modelFiles.push_back(entry.path().filename());
     }
-    closedir(dir);
   }
-
-#elif defined(_WIN32)
-  std::cout << "\033[1;31mLINE 329 MODEL REFLECTION\033[0m" << std::endl;
-#endif
 
   std::vector<std::pair<std::string, std::string>> modelDefinitions;
   std::vector<std::vector<std::pair<std::string, std::string>>>
@@ -211,6 +206,10 @@ void reflectModels(json config) {
           bool foundColon = false;
           int pos = -1;
 
+          if (line.size() == 0) {
+            continue;
+          }
+
           for (auto token : line) {
             ++pos;
             if (std::isspace(token) && fieldName.empty()) {
@@ -273,158 +272,161 @@ void reflectModels(json config) {
       std::string conversion = conversionTemplate;
       std::string model = classTemplate;
       std::string fields;
-      std::string Select;
-      std::string UpdateBy;
-      std::string DeleteBy;
-      std::string Insert;
+      std::string selects;
+      std::string deletes;
+      std::string updates;
+      std::string insert;
+      std::string selectByTemplate;
+      std::string updateByTemplate;
+      std::string deleteByTemplate;
       std::string ORMMethods;
       std::string sociUpdateFields;
       std::string sociUpdateUses;
       std::string sociInsertFields;
+      std::string sociInsertIntos;
       std::string fromSetters;
       std::string toSetters;
+      std::string fromSetterTemplate;
+      std::string toSetterTemplate;
 
       std::vector<std::pair<std::string, std::string>> tableFields;
 
-      Select +=
-          "static std::vector<" + modelName +
-          "> SelectAll() {\n"
-          "\t\tsoci::session* sql = Database::GetInstance()->GetSession();\n"
-          "\t\tsoci::rowset<" +
-          modelName + "> modelsRS = (sql->prepare << \"SELECT * FROM " +
-          tableName +
-          "\");\n"
-          "\t\tstd::vector<" +
-          modelName +
-          "> models;\n"
-          "\t\tstd::move(modelsRS.begin(), modelsRS.end(), "
-          "std::back_inserter(models));\n"
-          "\t\treturn models;\n"
-          "\t}\n";
+      fromSetterTemplate = "\t\tp.{{field name}} = v.get<{{field type}}>(\"{{field name}}\");\n";
+      toSetterTemplate = "\t\tv.set(\"{{field name}}\", p.{{field name}});\n";
 
-      Insert +=
-          "\tstatic " + modelName + " Insert(const " + modelName + "& " +
-          loweredModelName +
-          ") {\n"
-          "\t\tsoci::session* sql = Database::GetInstance()->GetSession();\n"
-          "\t\t" +
-          modelName +
-          " model;\n"
-          "\t\t*sql << \"INSERT INTO " +
-          tableName + " (";
+      selects = R"(
+  static std::vector<{{model name}}> SelectAll() {
+    soci::session* sql = Database::GetInstance()->GetSession();
+    soci::rowset<{{model name}}> modelsRS = (sql->prepare << "SELECT * FROM {{table name}}");
+    std::vector<{{model name}}> models;
+    std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
+    return models;
+  })";
+      selectByTemplate = R"(
+  static std::vector<{{model name}}> SelectBy{{Field name}}(const {{field type}}& {{field name}}) { 
+    soci::session* sql = Database::GetInstance()->GetSession();
+    soci::rowset<{{model name}}> modelsRS = (sql->prepare << "SELECT * FROM {{table name}} WHERE {{field name}} = :{{field name}}", soci::use({{field name}}));
+    std::vector<{{model name}}> models;
+    std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
+    return models;
+  })";
+
+      insert = R"(
+  static {{model name}} Insert(const {{model name}}& {{lowered model name}}) {
+    soci::session* sql = Database::GetInstance()->GetSession();
+    {{model name}} model;
+    *sql << "INSERT INTO {{table name}} ({{fields}}) VALUES ({{values}}) RETURNING * ", soci::use({{lowered model name}}), soci::into(model);
+    return model;
+  })";
+
+      deleteByTemplate = R"(
+  static std::vector<{{model name}}> DeleteBy{{Field name}}(const {{field type}}& {{field name}}) {
+    soci::session* sql = Database::GetInstance()->GetSession();
+    std::vector<{{model name}}> models;
+    soci::rowset<{{model name}}> modelRS = (sql->prepare << "DELETE FROM {{table name}} WHERE {{field name}} = :{{field name}} RETURNING *", soci::use({{field name}}));
+    std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
+    return models;
+  })";
+
+      updateByTemplate = R"(
+  static std::vector<{{model name}}> UpdateBy{{Field name}}(const {{field type}}& {{field name}}, const {{model name}}& {{lowered model name}}) {
+    soci::session* sql = Database::GetInstance()->GetSession();
+    std::vector<{{model name}}> models;
+    soci::rowset<{{model name}}> modelRS = (sql->prepare << "UPDATE {{table name}} SET {{fields}} WHERE {{field name}}=:{{field name}} RETURNING *", {{soci uses}}, soci::use({{field name}}));
+    std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
+    return models;
+  })";
+
+      findAndReplace(selects, "{{model name}}", modelName);
+      findAndReplace(selects, "{{table name}}", tableName);
+
+      findAndReplace(insert, "{{model name}}", modelName);
+      findAndReplace(insert, "{{lowered model name}}", loweredModelName);
+      findAndReplace(insert, "{{table name}}", tableName);
+
+      findAndReplace(selectByTemplate, "{{model name}}", modelName);
+      findAndReplace(selectByTemplate, "{{table name}}", tableName);
+
+      findAndReplace(deleteByTemplate, "{{model name}}", modelName);
+      findAndReplace(deleteByTemplate, "{{table name}}", tableName);
+
+      findAndReplace(updateByTemplate, "{{model name}}", modelName);
+      findAndReplace(updateByTemplate, "{{table name}}", tableName);
+      findAndReplace(updateByTemplate, "{{lowered model name}}", loweredModelName);
+
+      for (auto [fieldName, fieldType] : modelFields) {
+        fields +=
+            "  " + dataTypes.at(fieldType).first + " " + fieldName + ";\n";
+
+        sociUpdateFields += fieldName + " = :" + fieldName + ", ";
+        sociUpdateUses += "soci::use(" + loweredModelName + "." + fieldName +
+                          "), ";
+
+        sociInsertIntos += ":" + fieldName + ", ";
+        sociInsertFields += fieldName + ", ";
+
+        std::string fromSetter = fromSetterTemplate;
+        std::string toSetter = toSetterTemplate;
+
+        findAndReplace(fromSetter, "{{field name}}", fieldName);
+        findAndReplace(fromSetter, "{{field type}}", dataTypes.at(fieldType).first);
+        findAndReplace(toSetter, "{{field name}}", fieldName);
+
+        fromSetters += fromSetter; 
+        toSetters += toSetter;
+      }
+
+      sociInsertFields.replace(sociInsertFields.find_last_of(","), 2, "");
+      sociInsertIntos.replace(sociInsertIntos.find_last_of(","), 2, "");
+      sociUpdateFields.replace(sociUpdateFields.find_last_of(","), 2, "");
+      sociUpdateUses.replace(sociUpdateUses.find_last_of(","), 2, "");
 
       for (auto [fieldName, fieldType] : modelFields) {
         std::string capitalizedFieldName = fieldName;
         capitalizedFieldName[0] = std::toupper(capitalizedFieldName[0]);
 
+        std::string selectBy = selectByTemplate;
+        std::string updateBy = updateByTemplate;
+        std::string deleteBy = deleteByTemplate;
+        
         std::pair<std::string, std::string> temp =
             std::make_pair(fieldName, dataTypes.at(fieldType).second);
         tableFields.push_back(temp);
 
-        fromSetters += "\t\tp." + fieldName + " = v.get<" +
-                       dataTypes.at(fieldType).first + ">(\"" + fieldName +
-                       "\");\n";
-        toSetters += "\t\tv.set(\"" + fieldName + "\", p." + fieldName + ");\n";
-        fields +=
-            "\t" + dataTypes.at(fieldType).first + " " + fieldName + ";\n";
-        sociUpdateFields += fieldName + "=:" + fieldName + ", ";
-        sociUpdateUses +=
-            "soci::use(" + loweredModelName + "." + fieldName + "), ";
-        sociInsertFields += ":" + fieldName + ", ";
-        Insert += fieldName + ", ";
+        findAndReplace(selectBy, "{{Field name}}", capitalizedFieldName);
+        findAndReplace(selectBy, "{{field name}}", fieldName);
+        findAndReplace(selectBy, "{{field type}}", dataTypes.at(fieldType).first);
 
-        Select +=
-            "\tstatic std::vector<" + modelName + "> SelectBy" +
-            capitalizedFieldName + "(const " + dataTypes.at(fieldType).first +
-            "& " + fieldName +
-            ") {\n"
-            "\t\tsoci::session* sql = Database::GetInstance()->GetSession();\n"
-            "\t\tsoci::rowset<" +
-            modelName + "> modelsRS = (sql->prepare << \"SELECT * FROM " +
-            tableName + " WHERE " + fieldName + " = :" + fieldName +
-            "\", soci::use(" + fieldName +
-            "));\n"
-            "\t\tstd::vector<" +
-            modelName +
-            "> models;\n"
-            "\t\tstd::move(modelsRS.begin(), modelsRS.end(), "
-            "std::back_inserter(models));\n"
-            "\t\treturn models;\n"
-            "\t}\n";
+        findAndReplace(updateBy, "{{Field name}}", capitalizedFieldName);
+        findAndReplace(updateBy, "{{field name}}", fieldName);
+        findAndReplace(updateBy, "{{field type}}", dataTypes.at(fieldType).first);
+        findAndReplace(updateBy, "{{fields}}", sociUpdateFields);
+        findAndReplace(updateBy, "{{soci uses}}", sociUpdateUses);
 
-        DeleteBy +=
-            "\tstatic std::vector<" + modelName + "> DeleteBy" +
-            capitalizedFieldName + "(const " + dataTypes.at(fieldType).first +
-            "& " + fieldName +
-            ") {\n"
-            "\t\tsoci::session* sql = Database::GetInstance()->GetSession();\n"
-            "\t\tstd::vector<" +
-            modelName +
-            "> models;\n"
-            "\t\tsoci::rowset<" +
-            modelName + "> modelRS = (sql->prepare << \"DELETE FROM " +
-            tableName + " WHERE " + fieldName + " = :" + fieldName +
-            " RETURNING *\", soci::use(" + fieldName +
-            "));\n"
-            "\t\tstd::move(modelRS.begin(), modelRS.end(), "
-            "std::back_inserter(models));\n"
-            "\t\treturn models;\n"
-            "\t}\n";
+        findAndReplace(deleteBy, "{{Field name}}", capitalizedFieldName);
+        findAndReplace(deleteBy, "{{field name}}", fieldName);
+        findAndReplace(deleteBy, "{{field type}}", dataTypes.at(fieldType).first);
+
+        selects += selectBy;
+        deletes += deleteBy;
+        updates += updateBy;
       }
-
-      Insert.replace(Insert.find_last_of(", ") - 1, 2,
-                     ") VALUES (" +
-                         sociInsertFields.replace(
-                             sociInsertFields.find_last_of(", ") - 1, 2,
-                             ") RETURNING * \", soci::use(" + loweredModelName +
-                                 "), soci::into(model);\n"));
-
+      
+      findAndReplace(insert, "{{fields}}", sociInsertFields);
+      findAndReplace(insert, "{{values}}", sociInsertIntos);
       sociUpdateFields.replace(sociUpdateFields.find_last_of(", ") - 1, 2, " ");
 
-      for (auto [fieldName, fieldType] : modelFields) {
-        std::string capitalizedFieldName = fieldName;
-        capitalizedFieldName[0] = std::toupper(capitalizedFieldName[0]);
-
-        UpdateBy +=
-            "\tstatic std::vector<" + modelName + "> UpdateBy" +
-            capitalizedFieldName + "(const " + dataTypes.at(fieldType).first +
-            "& " + fieldName + ", const " + modelName + "& " +
-            loweredModelName +
-            ") {"
-            "\t\tsoci::session* sql = Database::GetInstance()->GetSession();\n"
-            "\t\tstd::vector<" +
-            modelName +
-            "> models;\n"
-            "\t\tsoci::rowset<" +
-            modelName + "> modelRS = (sql->prepare << \"UPDATE " + tableName +
-            " SET " + sociUpdateFields + "WHERE " + fieldName +
-            "=:" + capitalizedFieldName + "_" + " RETURNING *\", " +
-            sociUpdateUses + "soci::use(" + fieldName +
-            "));\n"
-            "\t\tstd::move(modelRS.begin(), modelRS.end(), "
-            "std::back_inserter(models));\n"
-            "\t\treturn models;\n"
-            "\t}\n";
-      }
-
-      Insert += "\t\treturn model;\n"
-                "\t}\n";
-
-      ORMMethods += Select + Insert + DeleteBy + UpdateBy;
+      ORMMethods += selects + insert + deletes + updates;
 
       tables.push_back(std::make_pair(tableName, tableFields));
 
-      model.replace(model.find("{{model name}}"), 14, modelName);
-      model.replace(model.find("{{model name}}"), 14, modelName);
-      model.replace(model.find("{{model name}}"), 14, modelName);
-      model.replace(model.find("{{fields}}"), 10, fields);
-      model.replace(model.find("{{ORM methods}}"), 15, ORMMethods);
+      findAndReplace(model, "{{model name}}", modelName);
+      findAndReplace(model, "{{fields}}", fields);
+      findAndReplace(model, "{{ORM methods}}", ORMMethods);
 
-      conversion.replace(conversion.find("{{model name}}"), 14, modelName);
-      conversion.replace(conversion.find("{{model name}}"), 14, modelName);
-      conversion.replace(conversion.find("{{model name}}"), 14, modelName);
-      conversion.replace(conversion.find("{{from setters}}"), 16, fromSetters);
-      conversion.replace(conversion.find("{{to setters}}"), 14, toSetters);
+      findAndReplace(conversion, "{{model name}}", modelName);
+      findAndReplace(conversion, "{{from setters}}", fromSetters);
+      findAndReplace(conversion, "{{to setters}}", toSetters);
 
       models += model;
       models += "\n";
@@ -441,7 +443,7 @@ void reflectModels(json config) {
 
   if (!modelsFileOut.is_open()) {
     std::cerr << "Error opening file: "
-              << config["server_location"].get<std::string>() + "/models.hpp"
+              << config["server_location"].get<std::string>() + "/models2.hpp"
               << std::endl;
     return;
   }
@@ -450,7 +452,7 @@ void reflectModels(json config) {
   modelsFileOut.close();
 }
 
-std::string checkConfig(json& config) {
+std::string checkConfig(json &config) {
   if (!config.contains("database")) {
     return "\033[1;31m[-] Database configuration not found\033[0m";
   }
@@ -486,7 +488,8 @@ std::string checkConfig(json& config) {
   return "";
 }
 
-json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocation) {
+json reflectModels(std::vector<std::string> modelFiles,
+                   std::string modelsLocation) {
   json models;
   for (auto modelFile : modelFiles) {
     std::string path = modelsLocation + "/" + modelFile;
@@ -576,7 +579,7 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
             return json();
           }
 
-          currentModel = modelName;  
+          currentModel = modelName;
           models[modelName]["table"] = tableName;
           inModel = lineCount;
         }
@@ -585,14 +588,13 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
       if (inModel != -1 && lineCount > inModel) {
         if (line.find("}") != std::string::npos) {
           inModel = -1;
-        } 
-        else {
+        } else {
           std::string fieldName = "";
           std::string fieldType = "";
 
           bool foundColon = false;
           int pos = -1;
-          
+
           if (line.size() == 0) {
             continue;
           }
@@ -608,7 +610,7 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
               fieldName += token;
             }
           }
-          
+
           for (auto token : line.substr(pos)) {
             ++pos;
             if (token == ':') {
@@ -642,15 +644,15 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
             std::cerr << "Expected field type after colon at " << path << ":"
                       << lineCount << std::endl;
             return json();
-          } 
-          else if (!fieldType.empty() && !dataTypes.contains(fieldType) && !models.contains(fieldType)) {
-            std::cerr << "Invalid field type '" << fieldType << "' at " << path << ":" << lineCount << std::endl;
+          } else if (!fieldType.empty() && !dataTypes.contains(fieldType) &&
+                     !models.contains(fieldType)) {
+            std::cerr << "Invalid field type '" << fieldType << "' at " << path
+                      << ":" << lineCount << std::endl;
             return json();
-          }
-          else if (!fieldName.empty() && !fieldType.empty() && foundColon) {
+          } else if (!fieldName.empty() && !fieldType.empty() && foundColon) {
             models[currentModel]["fields"][fieldName]["type"] = fieldType;
           }
-          
+
           // model : table {
           //  field : type @attribute value @attribute value
           // }
@@ -662,83 +664,76 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
             std::string attribute = "";
             std::string value = "";
             std::vector<std::string> tupleValues;
-           
+
             // attribute
             for (auto token : line.substr(pos)) {
               ++pos;
               if (token == '@' && attribute.empty()) {
                 continue;
-              }
-              else if (std::isspace(token) && attribute.empty()) {
+              } else if (std::isspace(token) && attribute.empty()) {
                 continue;
-              }
-              else if (std::isspace(token) && !attribute.empty()) {
+              } else if (std::isspace(token) && !attribute.empty()) {
                 break;
-              }
-              else {
+              } else {
                 attribute += token;
               }
             }
 
             bool inString = false;
             bool inTuple = false;
- 
+
             // value
             for (auto token : line.substr(pos, line.find('@', pos) - pos)) {
               ++pos;
               if (token == '@' && !keyOnlyAttributes.contains(attribute)) {
-                std::cerr << "Unexpected '@' instead of value for '" << attribute << "' at " << path << ":" << lineCount << std::endl;
+                std::cerr << "Unexpected '@' instead of value for '"
+                          << attribute << "' at " << path << ":" << lineCount
+                          << std::endl;
                 return json();
-              }
-              else if (token == '@' && keyOnlyAttributes.contains(attribute)) {
+              } else if (token == '@' &&
+                         keyOnlyAttributes.contains(attribute)) {
                 break;
-              }
-              else if (token == '\'' && !inString) {
+              } else if (token == '\'' && !inString) {
                 inString = true;
                 value += token;
                 continue;
-              }
-              else if (token == '\'' && inString) {
+              } else if (token == '\'' && inString) {
                 inString = false;
                 value += token;
                 continue;
-              }
-              else if (token == '(' && !inTuple) {
+              } else if (token == '(' && !inTuple) {
                 inTuple = true;
                 continue;
-              }
-              else if (token == ')' && inTuple) {
+              } else if (token == ')' && inTuple) {
                 inTuple = false;
                 tupleValues.push_back(value);
                 break;
-              }
-              else if (std::isspace(token) && value.empty()) {
+              } else if (std::isspace(token) && value.empty()) {
                 continue;
-              }
-              else if (std::isspace(token) && !value.empty() && !inString && !inTuple) {
+              } else if (std::isspace(token) && !value.empty() && !inString &&
+                         !inTuple) {
                 break;
-              }
-              else if (token == ',' && !value.empty() && inTuple) {
+              } else if (token == ',' && !value.empty() && inTuple) {
                 std::cout << "Tuple value: " << value << std::endl;
                 tupleValues.push_back(value);
                 value = "";
                 continue;
-              }
-              else {
+              } else {
                 value += token;
               }
             }
 
-            if (!attribute.empty() && !attributeConversions.contains(attribute)) {
-              std::cerr << "Invalid attribute '" << attribute << "' at " << path << ":" << lineCount
-                        << std::endl;
+            if (!attribute.empty() &&
+                !attributeConversions.contains(attribute)) {
+              std::cerr << "Invalid attribute '" << attribute << "' at " << path
+                        << ":" << lineCount << std::endl;
               return json();
             }
 
             if (value.empty()) {
               if (attribute == "default") {
-                std::cerr << "Expected value for '" << attribute << "' at " << path
-                          << ":" << lineCount << std::endl;
+                std::cerr << "Expected value for '" << attribute << "' at "
+                          << path << ":" << lineCount << std::endl;
                 return json();
               }
             }
@@ -747,14 +742,16 @@ json reflectModels(std::vector<std::string> modelFiles, std::string modelsLocati
               if (!tupleValues.empty()) {
                 std::cout << tupleValues.size() << std::endl;
                 for (auto tupleValue : tupleValues) {
-                  models[currentModel]["fields"][fieldName]["attributes"][attribute].push_back(tupleValue);
+                  models[currentModel]["fields"][fieldName]["attributes"]
+                        [attribute]
+                            .push_back(tupleValue);
                 }
-              }
-              else {
-                models[currentModel]["fields"][fieldName]["attributes"][attribute] = value;
+              } else {
+                models[currentModel]["fields"][fieldName]["attributes"]
+                      [attribute] = value;
               }
             }
-          } 
+          }
         }
       }
     }
@@ -776,7 +773,8 @@ void migrateDB(json config, std::string migrationName) {
 
   std::vector<std::string> modelFiles;
 
-  for (const auto& entry : std::filesystem::directory_iterator(modelsLocation)) {
+  for (const auto &entry :
+       std::filesystem::directory_iterator(modelsLocation)) {
     if (entry.path().extension() == ".scrl") {
       modelFiles.push_back(entry.path().filename());
     }
@@ -815,7 +813,7 @@ void migrateDB(json config, std::string migrationName) {
    *  },
    *  ...
    *}
-  */
+   */
   json models = reflectModels(modelFiles, modelsLocation);
 
   if (models.empty()) {
@@ -829,7 +827,8 @@ void migrateDB(json config, std::string migrationName) {
   }
 
   std::cout << config["database"]["models_location"].get<std::string>() +
-      migrationPrefix + migrationName + ".sql" << std::endl;
+                   migrationPrefix + migrationName + ".sql"
+            << std::endl;
 
   std::string migrationFile =
       config["database"]["models_location"].get<std::string>() +
@@ -845,25 +844,27 @@ void migrateDB(json config, std::string migrationName) {
   sql.open(soci::postgresql, connectionString);
 
   std::vector<std::string> tables(100);
- 
+
   sql.get_table_names(), soci::into(tables);
 
-  for (auto& [modelName, model] : models.items()) {
-    std::string tableName = model["table"].get<std::string>();    
+  for (auto &[modelName, model] : models.items()) {
+    std::string tableName = model["table"].get<std::string>();
     std::string loweredTableName = tableName;
     std::cout << "Migrating table: " << tableName << std::endl;
-    
+
     std::cout << model.dump(4) << std::endl;
-    std::transform(loweredTableName.begin(), loweredTableName.end(), loweredTableName.begin(), ::tolower);
+    std::transform(loweredTableName.begin(), loweredTableName.end(),
+                   loweredTableName.begin(), ::tolower);
 
     std::string migration = "";
-    
-    if (std::find(tables.begin(), tables.end(), loweredTableName) == tables.end()) {
+
+    if (std::find(tables.begin(), tables.end(), loweredTableName) ==
+        tables.end()) {
       migration = "CREATE TABLE " + tableName + " (\n";
 
       for (auto [fieldName, field] : model["fields"].items()) {
         std::string fieldType = field["type"].get<std::string>();
-        
+
         json attributes = field["attributes"];
         std::string attributesStr = "";
 
@@ -871,13 +872,16 @@ void migrateDB(json config, std::string migrationName) {
           for (auto [attribute, value] : attributes.items()) {
             if (attribute == "fk") {
               if (value.type() != json::value_t::array) {
-                std::cerr << "Expected object for 'fk' attribute at " << modelName << ":" << fieldName << std::endl;
+                std::cerr << "Expected object for 'fk' attribute at "
+                          << modelName << ":" << fieldName << std::endl;
                 sql.close();
                 return;
               }
 
               if (value.size() != 2) {
-                std::cerr << "Expected 2 values inside tuple for 'fk' attribute at " << modelName << ":" << fieldName << std::endl;
+                std::cerr
+                    << "Expected 2 values inside tuple for 'fk' attribute at "
+                    << modelName << ":" << fieldName << std::endl;
                 sql.close();
                 return;
               }
@@ -889,33 +893,41 @@ void migrateDB(json config, std::string migrationName) {
               fk.replace(fk.find("{{field}}"), 9, fkField);
 
               attributesStr += fk + " ";
-            }
-            else if (value.get<std::string>().empty()) {
+            } else if (value.get<std::string>().empty()) {
               attributesStr += attributeConversions.at(attribute) + " ";
-            }
-            else {
-              attributesStr += attributeConversions.at(attribute) + " " + value.get<std::string>() + " ";
+            } else {
+              attributesStr += attributeConversions.at(attribute) + " " +
+                               value.get<std::string>() + " ";
             }
           }
           attributesStr.pop_back();
         }
 
-        migration +=
-            "\t" + fieldName + " " + dataTypes.at(fieldType).second + " " + attributesStr + ",\n";
+        if (dataTypes.contains(fieldType)) {
+          migration += "\t" + fieldName + " " + dataTypes.at(fieldType).second +
+                       " " + attributesStr + ",\n";
+        }
       }
 
-      migration.replace(migration.find_last_of(","), 1, "\n);\n");
-    }
-    else {
+      if (migration.find_last_of(",") != std::string::npos) {
+        migration.replace(migration.find_last_of(","), 1, "\n);\n");
+      }
+    } else {
       // check if the table has all the fields
       // if not, add the missing fields
       // if the table has extra fields, remove them
 
-      soci::rowset<soci::row> tableFieldsRS = (sql.prepare << "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = :table_name", soci::use(loweredTableName));
+      soci::rowset<soci::row> tableFieldsRS =
+          (sql.prepare
+               << "SELECT column_name, data_type FROM "
+                  "information_schema.columns WHERE table_name = :table_name",
+           soci::use(loweredTableName));
 
       std::unordered_map<std::string, std::string> tableFields;
 
-      for (soci::rowset<soci::row>::const_iterator field = tableFieldsRS.begin(); field != tableFieldsRS.end(); ++field) {
+      for (soci::rowset<soci::row>::const_iterator field =
+               tableFieldsRS.begin();
+           field != tableFieldsRS.end(); ++field) {
         tableFields[field->get<std::string>(0)] = field->get<std::string>(1);
       }
 
@@ -925,16 +937,20 @@ void migrateDB(json config, std::string migrationName) {
       // TODO: fields whose attributes have changed should be updated
       for (auto [fieldName, field] : model["fields"].items()) {
         std::string fieldType = field["type"].get<std::string>();
+        if (!dataTypes.contains(fieldType) && models.contains(fieldType)) {
+          continue;
+        }
         if (!tableFields.contains(fieldName)) {
           missingFields.push_back(std::make_pair(fieldName, fieldType));
-        }
-        else {
+        } else {
           std::string tableFieldType = tableFields[fieldName];
-          std::transform(tableFieldType.begin(), tableFieldType.end(), tableFieldType.begin(), ::toupper);
+          std::transform(tableFieldType.begin(), tableFieldType.end(),
+                         tableFieldType.begin(), ::toupper);
 
           if (tableFieldType != dataTypes.at(fieldType).second) {
             missingFields.push_back(std::make_pair(fieldName, fieldType));
-            extraFields.push_back(std::make_pair(fieldName, tableFields[fieldName]));
+            extraFields.push_back(
+                std::make_pair(fieldName, tableFields[fieldName]));
           }
         }
       }
@@ -944,31 +960,34 @@ void migrateDB(json config, std::string migrationName) {
           extraFields.push_back(std::make_pair(fieldName, fieldType));
         }
       }
-      
+
       if (!extraFields.empty()) {
         migration += "ALTER TABLE " + tableName;
-        
+
         for (auto [fieldName, fieldType] : extraFields) {
           migration += " DROP COLUMN " + fieldName + ",";
         }
-        
+
         migration.replace(migration.find_last_of(","), 1, ";\n");
       }
 
       if (!missingFields.empty()) {
         migration += "ALTER TABLE " + tableName;
-        
+
         for (auto [fieldName, fieldType] : missingFields) {
           std::string attributes = "";
           if (model["fields"][fieldName].contains("attributes")) {
-            for (auto [attribute, value] : model["fields"][fieldName]["attributes"].items()) {
-              attributes += attributeConversions.at(attribute) + " " + value.get<std::string>() + " ";
+            for (auto [attribute, value] :
+                 model["fields"][fieldName]["attributes"].items()) {
+              attributes += attributeConversions.at(attribute) + " " +
+                            value.get<std::string>() + " ";
               attributes.pop_back();
             }
           }
-          migration += " ADD COLUMN " + fieldName + " " + dataTypes.at(fieldType).second + attributes + ",";
+          migration += " ADD COLUMN " + fieldName + " " +
+                       dataTypes.at(fieldType).second + attributes + ",";
         }
-        
+
         migration.replace(migration.find_last_of(","), 1, ";\n");
       }
     }

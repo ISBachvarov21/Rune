@@ -54,44 +54,44 @@ public:
 
       json config = json::parse(dbInfo.dbConfig);
 
-      if (!config["database"].contains("provider")) {
+      if (!config.contains("provider")) {
         std::cerr << "\033[1;31m[-] Database provider not found\033[0m"
                   << std::endl;
         return nullptr;
       }
 
-      if (!config["database"].contains("host")) {
+      if (!config.contains("host")) {
         std::cerr << "\033[1;31m[-] Database host not found\033[0m" << std::endl;
         return nullptr;
       }
 
-      if (!config["database"].contains("port")) {
+      if (!config.contains("port")) {
         std::cerr << "\033[1;31m[-] Database port not found\033[0m" << std::endl;
         return nullptr;
       }
 
-      if (!config["database"].contains("database")) {
+      if (!config.contains("database")) {
         std::cerr << "\033[1;31m[-] Database name not found\033[0m" << std::endl;
         return nullptr;
       }
 
-      if (!config["database"].contains("user")) {
+      if (!config.contains("user")) {
         std::cerr << "\033[1;31m[-] Database user not found\033[0m" << std::endl;
         return nullptr;
       }
 
-      if (!config["database"].contains("password")) {
+      if (!config.contains("password")) {
         std::cerr << "\033[1;31m[-] Database password not found\033[0m"
                   << std::endl;
         return nullptr;
       }
 
-      std::string provider = config["database"]["provider"].get<std::string>();
-      std::string host = config["database"]["host"].get<std::string>();
-      std::string port = config["database"]["port"].get<std::string>();
-      std::string database = config["database"]["database"].get<std::string>();
-      std::string user = config["database"]["user"].get<std::string>();
-      std::string password = config["database"]["password"].get<std::string>();
+      std::string provider = config["provider"].get<std::string>();
+      std::string host = config["host"].get<std::string>();
+      std::string port = std::to_string(config["port"].get<int>());
+      std::string database = config["database"].get<std::string>();
+      std::string user = config["user"].get<std::string>();
+      std::string password = config["password"].get<std::string>();
 
       databaseInstance =
           new Database(database, user, password, host, port, false);
