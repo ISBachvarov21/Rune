@@ -72,422 +72,6 @@ void findAndReplace(std::string &str, const std::string &toReplace,
   }
 }
 
-void reflectModels(json config) {
-  if (!config.contains("database")) {
-    return;
-  }
-
-  // find all header files inside config["database"]["models_location"]
-
-  if (!config["database"].contains("models_location")) {
-    std::cerr << "\033[1;31m[-] Models location not found\033[0m" << std::endl;
-    return;
-  }
-
-  std::string modelsLocation =
-      config["database"]["models_location"].get<std::string>();
-
-  std::vector<std::string> modelFiles;
-  std::string modelsFile = modelsFileTemplate;
-  std::string models;
-
-  for (const auto &entry :
-       std::filesystem::directory_iterator(modelsLocation)) {
-    if (entry.path().extension() == ".scrl") {
-      modelFiles.push_back(entry.path().filename());
-    }
-  }
-
-  std::vector<std::pair<std::string, std::string>> modelDefinitions;
-  std::vector<std::vector<std::pair<std::string, std::string>>>
-      fieldDefinitions;
-
-  for (auto model : modelFiles) {
-    std::string path = modelsLocation + "/" + model;
-    std::ifstream file(path);
-    std::string line;
-
-    if (!file.is_open()) {
-      std::cerr << "Error opening file: " << path << std::endl;
-      return;
-    }
-
-    unsigned int lineCount = 0;
-    int inModel = -1;
-    std::vector<std::pair<std::string, std::string>> fields;
-
-    while (std::getline(file, line)) {
-      ++lineCount;
-      if (inModel == -1) {
-        size_t modelDefinitionIndex = line.find("model");
-
-        if (modelDefinitionIndex != std::string::npos) {
-          std::string modelName;
-          size_t pos = modelDefinitionIndex + 5;
-          bool foundName = false;
-
-          for (auto token : line.substr(pos)) {
-            ++pos;
-            if (isalnum(token) || token == '_' || token == '-') {
-              modelName += token;
-              foundName = true;
-            } else if (std::isspace(token) && !foundName) {
-              continue;
-            } else if (std::isspace(token) && foundName) {
-              break;
-            } else {
-              std::cerr << "Expected name for model at " << path << ":"
-                        << lineCount << ", got: '" << token << "'" << std::endl;
-              return;
-            }
-          }
-
-          if (modelName.empty() || modelName == "model") {
-            std::cerr << "Invalid or empty model name at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          }
-
-          bool foundColon = false;
-          for (auto token : line.substr(pos)) {
-            ++pos;
-
-            if (std::isspace(token) && !foundColon) {
-              continue;
-            } else if (token == ':') {
-              foundColon = true;
-              break;
-            }
-          }
-
-          if (!foundColon) {
-            std::cerr << "Expected colon after model name at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          }
-
-          std::string tableName;
-          foundName = false;
-          for (auto token : line.substr(pos)) {
-            ++pos;
-
-            if (isalnum(token) || token == '_' || token == '-') {
-              tableName += token;
-              foundName = true;
-            } else if (std::isspace(token) && !foundName) {
-              continue;
-            } else if (std::isspace(token) && foundName) {
-              break;
-            } else {
-              std::cerr << "Expected table name for model at " << path << ":"
-                        << lineCount << ", got: '" << token << "'" << std::endl;
-              return;
-            }
-          }
-
-          if (tableName.empty() || tableName == ":" || tableName == "model") {
-            std::cerr << "Invalid or empty table name at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          }
-          modelDefinitions.push_back(std::make_pair(modelName, tableName));
-          inModel = lineCount;
-          fields.clear();
-        }
-      }
-
-      if (inModel != -1 && lineCount > inModel) {
-        if (line.find("}") != std::string::npos) {
-          inModel = -1;
-          fieldDefinitions.push_back(fields);
-        } else {
-          std::string fieldName = "";
-          std::string fieldType = "";
-          bool foundColon = false;
-          int pos = -1;
-
-          if (line.size() == 0) {
-            continue;
-          }
-
-          for (auto token : line) {
-            ++pos;
-            if (std::isspace(token) && fieldName.empty()) {
-              continue;
-            } else if (std::isspace(token) && !fieldName.empty()) {
-              break;
-            } else if ((isalnum(token) || token == '_' || token == '-') &&
-                       !foundColon) {
-              fieldName += token;
-            }
-          }
-
-          for (auto token : line.substr(pos)) {
-            ++pos;
-            if (token == ':') {
-              foundColon = true;
-              break;
-            }
-          }
-
-          if (!fieldName.empty() && !foundColon) {
-            std::cerr << "Expected colon after field name at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          } else if (fieldName.empty() && foundColon) {
-            std::cerr << "Expected field name before colon at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          }
-
-          for (auto token : line.substr(pos)) {
-            ++pos;
-            if (std::isspace(token) && fieldType.empty()) {
-              continue;
-            } else if (std::isspace(token) && !fieldType.empty()) {
-              break;
-            } else {
-              fieldType += token;
-            }
-          }
-
-          if (fieldType.empty() && foundColon) {
-            std::cerr << "Expected field type after colon at " << path << ":"
-                      << lineCount << std::endl;
-            return;
-          } else if (!fieldName.empty() && !fieldType.empty() && foundColon) {
-            fields.push_back(std::make_pair(fieldName, fieldType));
-          }
-        }
-      }
-    }
-
-    for (int i = 0; i < modelDefinitions.size(); ++i) {
-      auto [modelName, tableName] = modelDefinitions[i];
-      auto modelFields = fieldDefinitions[i];
-
-      std::string loweredModelName = modelName;
-      loweredModelName[0] = std::tolower(loweredModelName[0]);
-
-      std::string conversion = conversionTemplate;
-      std::string model = classTemplate;
-      std::string fields;
-      std::string selects;
-      std::string deletes;
-      std::string updates;
-      std::string insert;
-      std::string selectByTemplate;
-      std::string updateByTemplate;
-      std::string deleteByTemplate;
-      std::string ORMMethods;
-      std::string sociUpdateFields;
-      std::string sociUpdateUses;
-      std::string sociInsertFields;
-      std::string sociInsertIntos;
-      std::string fromSetters;
-      std::string toSetters;
-      std::string fromSetterTemplate;
-      std::string toSetterTemplate;
-
-      std::vector<std::pair<std::string, std::string>> tableFields;
-
-      fromSetterTemplate = "\t\tp.{{field name}} = v.get<{{field type}}>(\"{{field name}}\");\n";
-      toSetterTemplate = "\t\tv.set(\"{{field name}}\", p.{{field name}});\n";
-
-      selects = R"(
-  static std::vector<{{model name}}> SelectAll() {
-    soci::session* sql = Database::GetInstance()->GetSession();
-    soci::rowset<{{model name}}> modelsRS = (sql->prepare << "SELECT * FROM {{table name}}");
-    std::vector<{{model name}}> models;
-    std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
-    return models;
-  })";
-      selectByTemplate = R"(
-  static std::vector<{{model name}}> SelectBy{{Field name}}(const {{field type}}& {{field name}}) { 
-    soci::session* sql = Database::GetInstance()->GetSession();
-    soci::rowset<{{model name}}> modelsRS = (sql->prepare << "SELECT * FROM {{table name}} WHERE {{field name}} = :{{field name}}", soci::use({{field name}}));
-    std::vector<{{model name}}> models;
-    std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
-    return models;
-  })";
-
-      insert = R"(
-  static {{model name}} Insert(const {{model name}}& {{lowered model name}}) {
-    soci::session* sql = Database::GetInstance()->GetSession();
-    {{model name}} model;
-    *sql << "INSERT INTO {{table name}} ({{fields}}) VALUES ({{values}}) RETURNING * ", soci::use({{lowered model name}}), soci::into(model);
-    return model;
-  })";
-
-      deleteByTemplate = R"(
-  static std::vector<{{model name}}> DeleteBy{{Field name}}(const {{field type}}& {{field name}}) {
-    soci::session* sql = Database::GetInstance()->GetSession();
-    std::vector<{{model name}}> models;
-    soci::rowset<{{model name}}> modelRS = (sql->prepare << "DELETE FROM {{table name}} WHERE {{field name}} = :{{field name}} RETURNING *", soci::use({{field name}}));
-    std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
-    return models;
-  })";
-
-      updateByTemplate = R"(
-  static std::vector<{{model name}}> UpdateBy{{Field name}}(const {{field type}}& {{field name}}, const {{model name}}& {{lowered model name}}) {
-    soci::session* sql = Database::GetInstance()->GetSession();
-    std::vector<{{model name}}> models;
-    soci::rowset<{{model name}}> modelRS = (sql->prepare << "UPDATE {{table name}} SET {{fields}} WHERE {{field name}}=:{{field name}} RETURNING *", {{soci uses}}, soci::use({{field name}}));
-    std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
-    return models;
-  })";
-
-      findAndReplace(selects, "{{model name}}", modelName);
-      findAndReplace(selects, "{{table name}}", tableName);
-
-      findAndReplace(insert, "{{model name}}", modelName);
-      findAndReplace(insert, "{{lowered model name}}", loweredModelName);
-      findAndReplace(insert, "{{table name}}", tableName);
-
-      findAndReplace(selectByTemplate, "{{model name}}", modelName);
-      findAndReplace(selectByTemplate, "{{table name}}", tableName);
-
-      findAndReplace(deleteByTemplate, "{{model name}}", modelName);
-      findAndReplace(deleteByTemplate, "{{table name}}", tableName);
-
-      findAndReplace(updateByTemplate, "{{model name}}", modelName);
-      findAndReplace(updateByTemplate, "{{table name}}", tableName);
-      findAndReplace(updateByTemplate, "{{lowered model name}}", loweredModelName);
-
-      for (auto [fieldName, fieldType] : modelFields) {
-        fields +=
-            "  " + dataTypes.at(fieldType).first + " " + fieldName + ";\n";
-
-        sociUpdateFields += fieldName + " = :" + fieldName + ", ";
-        sociUpdateUses += "soci::use(" + loweredModelName + "." + fieldName +
-                          "), ";
-
-        sociInsertIntos += ":" + fieldName + ", ";
-        sociInsertFields += fieldName + ", ";
-
-        std::string fromSetter = fromSetterTemplate;
-        std::string toSetter = toSetterTemplate;
-
-        findAndReplace(fromSetter, "{{field name}}", fieldName);
-        findAndReplace(fromSetter, "{{field type}}", dataTypes.at(fieldType).first);
-        findAndReplace(toSetter, "{{field name}}", fieldName);
-
-        fromSetters += fromSetter; 
-        toSetters += toSetter;
-      }
-
-      sociInsertFields.replace(sociInsertFields.find_last_of(","), 2, "");
-      sociInsertIntos.replace(sociInsertIntos.find_last_of(","), 2, "");
-      sociUpdateFields.replace(sociUpdateFields.find_last_of(","), 2, "");
-      sociUpdateUses.replace(sociUpdateUses.find_last_of(","), 2, "");
-
-      for (auto [fieldName, fieldType] : modelFields) {
-        std::string capitalizedFieldName = fieldName;
-        capitalizedFieldName[0] = std::toupper(capitalizedFieldName[0]);
-
-        std::string selectBy = selectByTemplate;
-        std::string updateBy = updateByTemplate;
-        std::string deleteBy = deleteByTemplate;
-        
-        std::pair<std::string, std::string> temp =
-            std::make_pair(fieldName, dataTypes.at(fieldType).second);
-        tableFields.push_back(temp);
-
-        findAndReplace(selectBy, "{{Field name}}", capitalizedFieldName);
-        findAndReplace(selectBy, "{{field name}}", fieldName);
-        findAndReplace(selectBy, "{{field type}}", dataTypes.at(fieldType).first);
-
-        findAndReplace(updateBy, "{{Field name}}", capitalizedFieldName);
-        findAndReplace(updateBy, "{{field name}}", fieldName);
-        findAndReplace(updateBy, "{{field type}}", dataTypes.at(fieldType).first);
-        findAndReplace(updateBy, "{{fields}}", sociUpdateFields);
-        findAndReplace(updateBy, "{{soci uses}}", sociUpdateUses);
-
-        findAndReplace(deleteBy, "{{Field name}}", capitalizedFieldName);
-        findAndReplace(deleteBy, "{{field name}}", fieldName);
-        findAndReplace(deleteBy, "{{field type}}", dataTypes.at(fieldType).first);
-
-        selects += selectBy;
-        deletes += deleteBy;
-        updates += updateBy;
-      }
-      
-      findAndReplace(insert, "{{fields}}", sociInsertFields);
-      findAndReplace(insert, "{{values}}", sociInsertIntos);
-      sociUpdateFields.replace(sociUpdateFields.find_last_of(", ") - 1, 2, " ");
-
-      ORMMethods += selects + insert + deletes + updates;
-
-      tables.push_back(std::make_pair(tableName, tableFields));
-
-      findAndReplace(model, "{{model name}}", modelName);
-      findAndReplace(model, "{{fields}}", fields);
-      findAndReplace(model, "{{ORM methods}}", ORMMethods);
-
-      findAndReplace(conversion, "{{model name}}", modelName);
-      findAndReplace(conversion, "{{from setters}}", fromSetters);
-      findAndReplace(conversion, "{{to setters}}", toSetters);
-
-      models += model;
-      models += "\n";
-      models += conversion;
-    }
-
-    file.close();
-  }
-
-  modelsFile.replace(modelsFile.find("{{models}}"), 10, models);
-
-  std::ofstream modelsFileOut(config["server_location"].get<std::string>() +
-                              "/models.hpp");
-
-  if (!modelsFileOut.is_open()) {
-    std::cerr << "Error opening file: "
-              << config["server_location"].get<std::string>() + "/models2.hpp"
-              << std::endl;
-    return;
-  }
-
-  modelsFileOut << modelsFile;
-  modelsFileOut.close();
-}
-
-std::string checkConfig(json &config) {
-  if (!config.contains("database")) {
-    return "\033[1;31m[-] Database configuration not found\033[0m";
-  }
-
-  if (!config["database"].contains("models_location")) {
-    return "\033[1;31m[-] Models location not found\033[0m";
-  }
-
-  if (!config["database"].contains("provider")) {
-    return "\033[1;31m[-] Database provider not found\033[0m";
-  }
-
-  if (!config["database"].contains("host")) {
-    return "\033[1;31m[-] Database host not found\033[0m";
-  }
-
-  if (!config["database"].contains("port")) {
-    return "\033[1;31m[-] Database port not found\033[0m";
-  }
-
-  if (!config["database"].contains("database")) {
-    return "\033[1;31m[-] Database name not found\033[0m";
-  }
-
-  if (!config["database"].contains("user")) {
-    return "\033[1;31m[-] Database user not found\033[0m";
-  }
-
-  if (!config["database"].contains("password")) {
-    return "\033[1;31m[-] Database password not found\033[0m";
-  }
-
-  return "";
-}
-
 json reflectModels(std::vector<std::string> modelFiles,
                    std::string modelsLocation) {
   json models;
@@ -759,6 +343,275 @@ json reflectModels(std::vector<std::string> modelFiles,
 
   return models;
 }
+
+void reflectModels(json config) {
+  if (!config.contains("database")) {
+    return;
+  }
+
+  // find all header files inside config["database"]["models_location"]
+  if (!config["database"].contains("models_location")) {
+    std::cerr << "\033[1;31m[-] Models location not found\033[0m" << std::endl;
+    return;
+  }
+
+  std::string modelsLocation =
+      config["database"]["models_location"].get<std::string>();
+
+  std::vector<std::string> modelFiles;
+  std::string modelsFile = modelsFileTemplate;
+  std::string models;
+
+  for (const auto &entry :
+       std::filesystem::directory_iterator(modelsLocation)) {
+    if (entry.path().extension() == ".scrl") {
+      modelFiles.push_back(entry.path().filename());
+    }
+  }
+  
+  json modelsJson = reflectModels(modelFiles, modelsLocation);
+
+  /*
+   *{
+   *  "<model name>": {
+   *    "table": "<table name>",
+   *    "fields": [
+   *      "<field name>": {
+   *        "type": "<field type>",
+   *        "attributes": [
+   *          "<attribute name>": "<attribute value>"
+   *        ]
+   *      },
+   *      ...
+   *    ]
+   *  },
+   *  ...
+   *}
+  */
+  for (auto &[modelName, model] : modelsJson.items()) {
+    std::string tableName = model["table"].get<std::string>();
+    std::string loweredModelName = modelName;
+    loweredModelName[0] = std::tolower(loweredModelName[0]);
+
+    std::string conversion = conversionTemplate;
+    std::string modelStr = classTemplate;
+    std::string fields;
+    std::string selects;
+    std::string deletes;
+    std::string updates;
+    std::string insert;
+    std::string selectByTemplate;
+    std::string updateByTemplate;
+    std::string deleteByTemplate;
+    std::string ORMMethods;
+    std::string sociUpdateFields;
+    std::string sociUpdateUses;
+    std::string sociInsertFields;
+    std::string sociInsertIntos;
+    std::string fromSetters;
+    std::string toSetters;
+    std::string fromSetterTemplate;
+    std::string toSetterTemplate;
+
+    std::vector<std::pair<std::string, std::string>> tableFields;
+
+    fromSetterTemplate = "\t\tp.{{field name}} = v.get<{{field type}}>(\"{{field name}}\");\n";
+    toSetterTemplate = "\t\tv.set(\"{{field name}}\", p.{{field name}});\n";
+
+    selects = R"(
+static std::vector<{{model name}}> SelectAll() {
+  soci::session* sql = Database::GetInstance()->GetSession();
+  soci::rowset<{{model name}}> modelsRS = (sql->prepare << "SELECT * FROM {{table name}}");
+  std::vector<{{model name}}> models;
+  std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
+  return models;
+})";
+    selectByTemplate = R"(
+static std::vector<{{model name}}> SelectBy{{Field name}}(const {{field type}}& {{field name}}) { 
+  soci::session* sql = Database::GetInstance()->GetSession();
+  soci::rowset<{{model name}}> modelsRS = (sql->prepare << "SELECT * FROM {{table name}} WHERE {{field name}} = :{{field name}}", soci::use({{field name}}));
+  std::vector<{{model name}}> models;
+  std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
+  return models;
+})";
+
+    insert = R"(
+static {{model name}} Insert(const {{model name}}& {{lowered model name}}) {
+  soci::session* sql = Database::GetInstance()->GetSession();
+  {{model name}} model;
+  *sql << "INSERT INTO {{table name}} ({{fields}}) VALUES ({{values}}) RETURNING * ", soci::use({{lowered model name}}), soci::into(model);
+  return model;
+})";
+
+    deleteByTemplate = R"(
+static std::vector<{{model name}}> DeleteBy{{Field name}}(const {{field type}}& {{field name}}) {
+  soci::session* sql = Database::GetInstance()->GetSession();
+  std::vector<{{model name}}> models;
+  soci::rowset<{{model name}}> modelRS = (sql->prepare << "DELETE FROM {{table name}} WHERE {{field name}} = :{{field name}} RETURNING *", soci::use({{field name}}));
+  std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
+  return models;
+})";
+
+    updateByTemplate = R"(
+static std::vector<{{model name}}> UpdateBy{{Field name}}(const {{field type}}& {{field name}}, const {{model name}}& {{lowered model name}}) {
+  soci::session* sql = Database::GetInstance()->GetSession();
+  std::vector<{{model name}}> models;
+  soci::rowset<{{model name}}> modelRS = (sql->prepare << "UPDATE {{table name}} SET {{fields}} WHERE {{field name}}=:{{field name}} RETURNING *", {{soci uses}}, soci::use({{field name}}));
+  std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
+  return models;
+})";
+
+    findAndReplace(selects, "{{model name}}", modelName);
+    findAndReplace(selects, "{{table name}}", tableName);
+
+    findAndReplace(insert, "{{model name}}", modelName);
+    findAndReplace(insert, "{{lowered model name}}", loweredModelName);
+    findAndReplace(insert, "{{table name}}", tableName);
+
+    findAndReplace(selectByTemplate, "{{model name}}", modelName);
+    findAndReplace(selectByTemplate, "{{table name}}", tableName);
+
+    findAndReplace(deleteByTemplate, "{{model name}}", modelName);
+    findAndReplace(deleteByTemplate, "{{table name}}", tableName);
+
+    findAndReplace(updateByTemplate, "{{model name}}", modelName);
+    findAndReplace(updateByTemplate, "{{table name}}", tableName);
+    findAndReplace(updateByTemplate, "{{lowered model name}}", loweredModelName);
+    
+    for (auto [fieldName, field] : model["fields"].items()) {
+      std::string fieldType = field["type"].get<std::string>();
+      fields +=
+          "  " + dataTypes.at(fieldType).first + " " + fieldName + ";\n";
+
+      sociUpdateFields += fieldName + " = :" + fieldName + ", ";
+      sociUpdateUses += "soci::use(" + loweredModelName + "." + fieldName +
+                        "), ";
+
+      sociInsertIntos += ":" + fieldName + ", ";
+      sociInsertFields += fieldName + ", ";
+
+      std::string fromSetter = fromSetterTemplate;
+      std::string toSetter = toSetterTemplate;
+
+      findAndReplace(fromSetter, "{{field name}}", fieldName);
+      findAndReplace(fromSetter, "{{field type}}", dataTypes.at(fieldType).first);
+      findAndReplace(toSetter, "{{field name}}", fieldName);
+
+      fromSetters += fromSetter; 
+      toSetters += toSetter;
+    }
+
+    sociInsertFields.replace(sociInsertFields.find_last_of(","), 2, "");
+    sociInsertIntos.replace(sociInsertIntos.find_last_of(","), 2, "");
+    sociUpdateFields.replace(sociUpdateFields.find_last_of(","), 2, "");
+    sociUpdateUses.replace(sociUpdateUses.find_last_of(","), 2, "");
+
+    for (auto [fieldName, field] : model["fields"].items()) {
+      std::string fieldType = field["type"].get<std::string>();
+      std::string capitalizedFieldName = fieldName;
+      capitalizedFieldName[0] = std::toupper(capitalizedFieldName[0]);
+
+      std::string selectBy = selectByTemplate;
+      std::string updateBy = updateByTemplate;
+      std::string deleteBy = deleteByTemplate;
+      
+      std::pair<std::string, std::string> temp =
+          std::make_pair(fieldName, dataTypes.at(fieldType).second);
+      tableFields.push_back(temp);
+
+      findAndReplace(selectBy, "{{Field name}}", capitalizedFieldName);
+      findAndReplace(selectBy, "{{field name}}", fieldName);
+      findAndReplace(selectBy, "{{field type}}", dataTypes.at(fieldType).first);
+
+      findAndReplace(updateBy, "{{Field name}}", capitalizedFieldName);
+      findAndReplace(updateBy, "{{field name}}", fieldName);
+      findAndReplace(updateBy, "{{field type}}", dataTypes.at(fieldType).first);
+      findAndReplace(updateBy, "{{fields}}", sociUpdateFields);
+      findAndReplace(updateBy, "{{soci uses}}", sociUpdateUses);
+
+      findAndReplace(deleteBy, "{{Field name}}", capitalizedFieldName);
+      findAndReplace(deleteBy, "{{field name}}", fieldName);
+      findAndReplace(deleteBy, "{{field type}}", dataTypes.at(fieldType).first);
+
+      selects += selectBy;
+      deletes += deleteBy;
+      updates += updateBy;
+    }
+    
+    findAndReplace(insert, "{{fields}}", sociInsertFields);
+    findAndReplace(insert, "{{values}}", sociInsertIntos);
+    sociUpdateFields.replace(sociUpdateFields.find_last_of(", ") - 1, 2, " ");
+
+    ORMMethods += selects + insert + deletes + updates;
+
+    tables.push_back(std::make_pair(tableName, tableFields));
+
+    findAndReplace(modelStr, "{{model name}}", modelName);
+    findAndReplace(modelStr, "{{fields}}", fields);
+    findAndReplace(modelStr, "{{ORM methods}}", ORMMethods);
+
+    findAndReplace(conversion, "{{model name}}", modelName);
+    findAndReplace(conversion, "{{from setters}}", fromSetters);
+    findAndReplace(conversion, "{{to setters}}", toSetters);
+
+    models += modelStr;
+    models += "\n";
+    models += conversion;
+    std::cout << "success 123" << std::endl;
+  }
+
+  modelsFile.replace(modelsFile.find("{{models}}"), 10, models);
+
+  std::ofstream modelsFileOut(config["server_location"].get<std::string>() +
+                              "/models.hpp");
+
+  if (!modelsFileOut.is_open()) {
+    std::cerr << "Error opening file: "
+              << config["server_location"].get<std::string>() + "/models.hpp"
+              << std::endl;
+    return;
+  }
+
+  modelsFileOut << modelsFile;
+  modelsFileOut.close();
+}
+
+std::string checkConfig(json &config) {
+  if (!config.contains("database")) {
+    return "\033[1;31m[-] Database configuration not found\033[0m";
+  }
+
+  if (!config["database"].contains("models_location")) {
+    return "\033[1;31m[-] Models location not found\033[0m";
+  }
+
+  if (!config["database"].contains("provider")) {
+    return "\033[1;31m[-] Database provider not found\033[0m";
+  }
+
+  if (!config["database"].contains("host")) {
+    return "\033[1;31m[-] Database host not found\033[0m";
+  }
+
+  if (!config["database"].contains("port")) {
+    return "\033[1;31m[-] Database port not found\033[0m";
+  }
+
+  if (!config["database"].contains("database")) {
+    return "\033[1;31m[-] Database name not found\033[0m";
+  }
+
+  if (!config["database"].contains("user")) {
+    return "\033[1;31m[-] Database user not found\033[0m";
+  }
+
+  if (!config["database"].contains("password")) {
+    return "\033[1;31m[-] Database password not found\033[0m";
+  }
+
+  return "";
+}
+
 
 void migrateDB(json config, std::string migrationName) {
   std::string configCheck = checkConfig(config);

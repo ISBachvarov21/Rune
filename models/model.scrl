@@ -8,4 +8,5 @@ model Post : Posts {
   title : String
   description : String
   date : Date
+
 }
