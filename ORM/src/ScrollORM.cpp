@@ -16,7 +16,7 @@ const std::unordered_map<std::string, std::string> attributeConversions = {
     {"pk", "PRIMARY KEY"},
     {"unique", "UNIQUE"},
     {"nullable", "NOT NULL"},
-    {"fk", "FOREIGN KEY REFERENCES {{table}}({{field}})"},
+    {"fk", "REFERENCES {{table}}({{field}}) ON DELETE CASCADE"},
     {"check", "CHECK ({{condition}})"},
     {"index", "INDEX"},
     {"autoincrement", "AUTOINCREMENT"}};
@@ -65,7 +65,7 @@ struct soci::type_conversion<{{model name}}> {
 )";
 
 void findAndReplace(std::string &str, const std::string &toReplace,
-                           const std::string &replaceWith) {
+                    const std::string &replaceWith) {
   size_t pos = 0;
   while ((pos = str.find(toReplace, pos)) != std::string::npos) {
     str.replace(pos, toReplace.length(), replaceWith);
@@ -87,6 +87,7 @@ json reflectModels(std::vector<std::string> modelFiles,
 
     unsigned int lineCount = 0;
     int inModel = -1;
+    int modelNumber = 0;
     std::string currentModel = "";
 
     while (std::getline(file, line)) {
@@ -165,6 +166,9 @@ json reflectModels(std::vector<std::string> modelFiles,
 
           currentModel = modelName;
           models[modelName]["table"] = tableName;
+          ++modelNumber;
+          models[modelName]["model_number"] = modelNumber;
+
           inModel = lineCount;
         }
       }
@@ -298,7 +302,6 @@ json reflectModels(std::vector<std::string> modelFiles,
                          !inTuple) {
                 break;
               } else if (token == ',' && !value.empty() && inTuple) {
-                std::cout << "Tuple value: " << value << std::endl;
                 tupleValues.push_back(value);
                 value = "";
                 continue;
@@ -324,15 +327,12 @@ json reflectModels(std::vector<std::string> modelFiles,
 
             if (!attribute.empty()) {
               if (!tupleValues.empty()) {
-                std::cout << tupleValues.size() << std::endl;
                 for (auto tupleValue : tupleValues) {
-                  models[currentModel]["fields"][fieldName]["attributes"]
-                        [attribute]
-                            .push_back(tupleValue);
+                  models[currentModel]["fields"][fieldName]["attributes"][attribute].push_back(tupleValue);
                 }
-              } else {
-                models[currentModel]["fields"][fieldName]["attributes"]
-                      [attribute] = value;
+              }
+              else {
+                models[currentModel]["fields"][fieldName]["attributes"][attribute] = value;
               }
             }
           }
@@ -368,7 +368,7 @@ void reflectModels(json config) {
       modelFiles.push_back(entry.path().filename());
     }
   }
-  
+
   json modelsJson = reflectModels(modelFiles, modelsLocation);
 
   /*
@@ -387,7 +387,7 @@ void reflectModels(json config) {
    *  },
    *  ...
    *}
-  */
+   */
   for (auto &[modelName, model] : modelsJson.items()) {
     std::string tableName = model["table"].get<std::string>();
     std::string loweredModelName = modelName;
@@ -415,51 +415,52 @@ void reflectModels(json config) {
 
     std::vector<std::pair<std::string, std::string>> tableFields;
 
-    fromSetterTemplate = "\t\tp.{{field name}} = v.get<{{field type}}>(\"{{field name}}\");\n";
+    fromSetterTemplate =
+        "\t\tp.{{field name}} = v.get<{{field type}}>(\"{{field name}}\");\n";
     toSetterTemplate = "\t\tv.set(\"{{field name}}\", p.{{field name}});\n";
 
     selects = R"(
-static std::vector<{{model name}}> SelectAll() {
-  soci::session* sql = Database::GetInstance()->GetSession();
-  soci::rowset<{{model name}}> modelsRS = (sql->prepare << "SELECT * FROM {{table name}}");
-  std::vector<{{model name}}> models;
-  std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
-  return models;
-})";
+  static std::vector<{{model name}}> SelectAll() {
+    soci::session* sql = Database::GetInstance()->GetSession();
+    soci::rowset<{{model name}}> modelsRS = (sql->prepare << "SELECT * FROM {{table name}}");
+    std::vector<{{model name}}> models;
+    std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
+    return models;
+  })";
     selectByTemplate = R"(
-static std::vector<{{model name}}> SelectBy{{Field name}}(const {{field type}}& {{field name}}) { 
-  soci::session* sql = Database::GetInstance()->GetSession();
-  soci::rowset<{{model name}}> modelsRS = (sql->prepare << "SELECT * FROM {{table name}} WHERE {{field name}} = :{{field name}}", soci::use({{field name}}));
-  std::vector<{{model name}}> models;
-  std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
-  return models;
-})";
+  static std::vector<{{model name}}> SelectBy{{Field name}}(const {{field type}}& {{field name}}) { 
+    soci::session* sql = Database::GetInstance()->GetSession();
+    soci::rowset<{{model name}}> modelsRS = (sql->prepare << "SELECT * FROM {{table name}} WHERE {{field name}} = :{{field name}}", soci::use({{field name}}));
+    std::vector<{{model name}}> models;
+    std::move(modelsRS.begin(), modelsRS.end(), std::back_inserter(models));
+    return models;
+  })";
 
     insert = R"(
-static {{model name}} Insert(const {{model name}}& {{lowered model name}}) {
-  soci::session* sql = Database::GetInstance()->GetSession();
-  {{model name}} model;
-  *sql << "INSERT INTO {{table name}} ({{fields}}) VALUES ({{values}}) RETURNING * ", soci::use({{lowered model name}}), soci::into(model);
-  return model;
-})";
+  static {{model name}} Insert(const {{model name}}& {{lowered model name}}) {
+    soci::session* sql = Database::GetInstance()->GetSession();
+    {{model name}} model;
+    *sql << "INSERT INTO {{table name}} ({{fields}}) VALUES ({{values}}) RETURNING * ", soci::use({{lowered model name}}), soci::into(model);
+    return model;
+  })";
 
     deleteByTemplate = R"(
-static std::vector<{{model name}}> DeleteBy{{Field name}}(const {{field type}}& {{field name}}) {
-  soci::session* sql = Database::GetInstance()->GetSession();
-  std::vector<{{model name}}> models;
-  soci::rowset<{{model name}}> modelRS = (sql->prepare << "DELETE FROM {{table name}} WHERE {{field name}} = :{{field name}} RETURNING *", soci::use({{field name}}));
-  std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
-  return models;
-})";
+  static std::vector<{{model name}}> DeleteBy{{Field name}}(const {{field type}}& {{field name}}) {
+    soci::session* sql = Database::GetInstance()->GetSession();
+    std::vector<{{model name}}> models;
+    soci::rowset<{{model name}}> modelRS = (sql->prepare << "DELETE FROM {{table name}} WHERE {{field name}} = :{{field name}} RETURNING *", soci::use({{field name}}));
+    std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
+    return models;
+  })";
 
     updateByTemplate = R"(
-static std::vector<{{model name}}> UpdateBy{{Field name}}(const {{field type}}& {{field name}}, const {{model name}}& {{lowered model name}}) {
-  soci::session* sql = Database::GetInstance()->GetSession();
-  std::vector<{{model name}}> models;
-  soci::rowset<{{model name}}> modelRS = (sql->prepare << "UPDATE {{table name}} SET {{fields}} WHERE {{field name}}=:{{field name}} RETURNING *", {{soci uses}}, soci::use({{field name}}));
-  std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
-  return models;
-})";
+  static std::vector<{{model name}}> UpdateBy{{Field name}}(const {{field type}}& {{field name}}, const {{model name}}& {{lowered model name}}) {
+    soci::session* sql = Database::GetInstance()->GetSession();
+    std::vector<{{model name}}> models;
+    soci::rowset<{{model name}}> modelRS = (sql->prepare << "UPDATE {{table name}} SET {{fields}} WHERE {{field name}}=:{{field name}} RETURNING *", {{soci uses}}, soci::use({{field name}}));
+    std::move(modelRS.begin(), modelRS.end(), std::back_inserter(models));
+    return models;
+  })";
 
     findAndReplace(selects, "{{model name}}", modelName);
     findAndReplace(selects, "{{table name}}", tableName);
@@ -476,16 +477,16 @@ static std::vector<{{model name}}> UpdateBy{{Field name}}(const {{field type}}& 
 
     findAndReplace(updateByTemplate, "{{model name}}", modelName);
     findAndReplace(updateByTemplate, "{{table name}}", tableName);
-    findAndReplace(updateByTemplate, "{{lowered model name}}", loweredModelName);
-    
+    findAndReplace(updateByTemplate, "{{lowered model name}}",
+                   loweredModelName);
+
     for (auto [fieldName, field] : model["fields"].items()) {
       std::string fieldType = field["type"].get<std::string>();
-      fields +=
-          "  " + dataTypes.at(fieldType).first + " " + fieldName + ";\n";
+      fields += "\t" + dataTypes.at(fieldType).first + " " + fieldName + ";\n";
 
       sociUpdateFields += fieldName + " = :" + fieldName + ", ";
-      sociUpdateUses += "soci::use(" + loweredModelName + "." + fieldName +
-                        "), ";
+      sociUpdateUses +=
+          "soci::use(" + loweredModelName + "." + fieldName + "), ";
 
       sociInsertIntos += ":" + fieldName + ", ";
       sociInsertFields += fieldName + ", ";
@@ -494,10 +495,11 @@ static std::vector<{{model name}}> UpdateBy{{Field name}}(const {{field type}}& 
       std::string toSetter = toSetterTemplate;
 
       findAndReplace(fromSetter, "{{field name}}", fieldName);
-      findAndReplace(fromSetter, "{{field type}}", dataTypes.at(fieldType).first);
+      findAndReplace(fromSetter, "{{field type}}",
+                     dataTypes.at(fieldType).first);
       findAndReplace(toSetter, "{{field name}}", fieldName);
 
-      fromSetters += fromSetter; 
+      fromSetters += fromSetter;
       toSetters += toSetter;
     }
 
@@ -514,7 +516,7 @@ static std::vector<{{model name}}> UpdateBy{{Field name}}(const {{field type}}& 
       std::string selectBy = selectByTemplate;
       std::string updateBy = updateByTemplate;
       std::string deleteBy = deleteByTemplate;
-      
+
       std::pair<std::string, std::string> temp =
           std::make_pair(fieldName, dataTypes.at(fieldType).second);
       tableFields.push_back(temp);
@@ -537,7 +539,7 @@ static std::vector<{{model name}}> UpdateBy{{Field name}}(const {{field type}}& 
       deletes += deleteBy;
       updates += updateBy;
     }
-    
+
     findAndReplace(insert, "{{fields}}", sociInsertFields);
     findAndReplace(insert, "{{values}}", sociInsertIntos);
     sociUpdateFields.replace(sociUpdateFields.find_last_of(", ") - 1, 2, " ");
@@ -557,7 +559,6 @@ static std::vector<{{model name}}> UpdateBy{{Field name}}(const {{field type}}& 
     models += modelStr;
     models += "\n";
     models += conversion;
-    std::cout << "success 123" << std::endl;
   }
 
   modelsFile.replace(modelsFile.find("{{models}}"), 10, models);
@@ -611,7 +612,6 @@ std::string checkConfig(json &config) {
 
   return "";
 }
-
 
 void migrateDB(json config, std::string migrationName) {
   std::string configCheck = checkConfig(config);
@@ -679,9 +679,7 @@ void migrateDB(json config, std::string migrationName) {
     migrationPrefix.pop_back();
   }
 
-  std::cout << config["database"]["models_location"].get<std::string>() +
-                   migrationPrefix + migrationName + ".sql"
-            << std::endl;
+  // TODO: insert a user and test out the orm (i think there is a problem with the insertion of related fields)
 
   std::string migrationFile =
       config["database"]["models_location"].get<std::string>() +
@@ -700,12 +698,27 @@ void migrateDB(json config, std::string migrationName) {
 
   sql.get_table_names(), soci::into(tables);
 
+  // sort models by model_number
+  std::vector<std::pair<int, std::pair<std::string, json>>> sortedModels;
+
+  std::cout << models.dump(4) << std::endl;
+
   for (auto &[modelName, model] : models.items()) {
+    sortedModels.push_back(std::make_pair(model["model_number"].get<int>(), std::make_pair(modelName, model)));
+  }
+
+  std::sort(sortedModels.begin(), sortedModels.end(),
+            [](const std::pair<int, std::pair<std::string, json>> &a,
+               const std::pair<int, std::pair<std::string, json>> &b) {
+              return a.first < b.first;
+            });
+
+  for (auto &[modelNumber, modelPair] : sortedModels) {
+    auto& [modelName, model] = modelPair;
+
     std::string tableName = model["table"].get<std::string>();
     std::string loweredTableName = tableName;
-    std::cout << "Migrating table: " << tableName << std::endl;
 
-    std::cout << model.dump(4) << std::endl;
     std::transform(loweredTableName.begin(), loweredTableName.end(),
                    loweredTableName.begin(), ::tolower);
 
@@ -757,8 +770,13 @@ void migrateDB(json config, std::string migrationName) {
         }
 
         if (dataTypes.contains(fieldType)) {
-          migration += "\t" + fieldName + " " + dataTypes.at(fieldType).second +
-                       " " + attributesStr + ",\n";
+          if (attributesStr.empty()) {
+            migration += "\t" + fieldName + " " + dataTypes.at(fieldType).second +
+                         ",\n";
+          } else {
+            migration += "\t" + fieldName + " " + dataTypes.at(fieldType).second +
+                         " " + attributesStr + ",\n";
+          }
         }
       }
 

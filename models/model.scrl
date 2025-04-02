@@ -1,12 +1,12 @@
 model User : Users {
-  name : String
-  age : Int
-
+  id : Int @pk
+  email : String
 }
 
 model Post : Posts {
+  id : Int
   title : String
   description : String
   date : Date
-
+  user_id : Int @fk (Users, id)
 }
