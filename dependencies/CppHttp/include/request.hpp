@@ -9,7 +9,7 @@
 #include <regex>
 #include "ctre.hpp"
 
-#ifdef _WIN32 || _WIN64 || _MSC_VER
+#if defined(_WIN32) || defined(_WIN64) || defined(_MSC_VER)
 	#define WIN32_LEAN_AND_MEAN
 	#define _WINSOCK_DEPRECATED_NO_WARNINGS
 	#include <Windows.h>
@@ -198,8 +198,9 @@ namespace CppHttp {
 				method(CppHttp::Utils::GetMethod(original)),
 				parameters(CppHttp::Utils::GetParameters(original)),
 				headers(CppHttp::Utils::GetHeaders(original)),
-				body(CppHttp::Utils::GetBody(original))
-			{}
+				body(CppHttp::Utils::GetBody(original)),
+        consoleStream(std::cout.rdbuf())
+			{};
 			
 			SOCKET sender = INVALID_SOCKET;
 			std::string original;
@@ -210,6 +211,7 @@ namespace CppHttp {
 			std::string body;
 			std::u8string uoriginal;
 			std::u8string ubody;
+      std::streambuf* consoleStream;
 		};
 		
 		class Request {

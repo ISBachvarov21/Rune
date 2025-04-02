@@ -1,3 +1,6 @@
+#pragma once
+#include "../ORM/include/ScrollORM.hpp"
+
 #include "../dependencies/CppHttp/include/CppHttp.hpp"
 #include <chrono>
 #include <iostream>
@@ -5,10 +8,12 @@
 #include <stop_token>
 #include <thread>
 #include <vector>
+#include "Config.hpp"
 
 #if defined(__linux__) || defined(__APPLE__)
 #include <dlfcn.h>
 #include <sys/inotify.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <dirent.h>
 #endif
@@ -20,7 +25,10 @@
 
 typedef void (*instantiateRoutesFunc)(CppHttp::Net::TcpListener &,
                                       CppHttp::Net::Router &);
+
 static std::mutex reloadMutex;
+
+static int reloadCount = 0;
 
 static instantiateRoutesFunc instantiateRoutes = nullptr;
 
@@ -36,9 +44,11 @@ void instantiateRoutes(CppHttp::Net::TcpListener &listener,
 }
 )";
 
-static json config;
+struct alignas(64) DatabaseInfo {
+  char dbConfig[512];
+};
 
-void loadConfig();
+static json config;
 
 void server(std::stop_token stoken, bool &shouldReload,
             std::mutex &reloadMutex);

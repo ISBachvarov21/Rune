@@ -2,52 +2,6 @@
 
 // TODO: replace literal string values with config values (continue from line
 // 168)
-
-void loadConfig() { 
-  std::ifstream file("rune.json");
-  if (!file) {
-    std::ofstream newFile("rune.json");
-  
-    std::cout << "\033[1;31m[-] Configuration file not found\033[0m" << std::endl;
-    std::cout << "\033[1;31m[-] Creating new configuration file..\033[0m" << std::endl;
-    // Default configuration
-    newFile << "{\n"
-            << "\t\"port\": 8000,\n"
-            << "\t\"host\": \"127.0.0.1\",\n"
-            << "\t\"server_location\": \"./server\",\n"
-            << "\t\"endpoint_folder\": \"routes\"\n"
-            << "}";
-    newFile.close();
-    file.open("rune.json");
-  }
-
-  std::string content((std::istreambuf_iterator<char>(file)),
-                      (std::istreambuf_iterator<char>()));
-  config = json::parse(content);
-  if (config.is_discarded()) {
-    std::cerr << "Failed to parse configuration" << std::endl;
-    return;
-  }
-  if (!config.contains("port") || !config["port"].is_number_integer()) {
-    std::cerr << "Invalid port" << std::endl;
-    return;
-  }
-  if (!config.contains("host") || !config["host"].is_string()) {
-    std::cerr << "Invalid host" << std::endl;
-    return;
-  }
-  if (!config.contains("server_location") || !config["server_location"].is_string()) {
-    std::cerr << "Invalid server location" << std::endl;
-    return;
-  }
-  if (!config.contains("endpoint_folder") || !config["endpoint_folder"].is_string()) {
-    std::cerr << "Invalid endpoint folder" << std::endl;
-    return;
-  }
-
-  file.close();
-}
-
 void server(std::stop_token stoken, bool &shouldReload,
             std::mutex &reloadMutex) {
   CppHttp::Net::Router router;
@@ -93,120 +47,125 @@ void populateRoutes(std::vector<std::string> headers) {
     std::string path = config["server_location"].get<std::string>() + "/" +
                        config["endpoint_folder"].get<std::string>() + "/" +
                        header;
+
     std::ifstream file(path);
     std::string line;
 
     if (!file.is_open()) {
-        std::cerr << "Error opening file: " << path
-            << std::endl;
+      std::cerr << "Error opening file: " << path << std::endl;
 
-        if (file.bad()) {
-            std::cerr << "Fatal error: badbit is set." << std::endl;
-        }
+      if (file.bad()) {
+        std::cerr << "Fatal error: badbit is set." << std::endl;
+      }
 
-        if (file.fail()) {
-            std::cerr << "Error details: " << strerror(errno)
-                << std::endl;
+      if (file.fail()) {
+        std::cerr << "Error details: " << strerror(errno) << std::endl;
 
 #if defined(_WIN32)
-            if (errno == EACCES) {
-                HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (errno == EACCES) {
+          HANDLE hFile =
+              CreateFileA(path.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING,
+                          FILE_ATTRIBUTE_NORMAL, NULL);
 
-                if (hFile == INVALID_HANDLE_VALUE) {
-					DWORD dw = GetLastError();
-                    if (dw == ERROR_SHARING_VIOLATION) {
-                        std::cout << "Requested file is locked. Waiting for file to be unlocked..." << std::endl;
+          if (hFile == INVALID_HANDLE_VALUE) {
+            DWORD dw = GetLastError();
+            if (dw == ERROR_SHARING_VIOLATION) {
+              std::cout << "Requested file is locked. Waiting for file to be "
+                           "unlocked..."
+                        << std::endl;
 
-                        auto start = std::chrono::high_resolution_clock::now();
-                        while (true) {
-                            hFile = CreateFileA(path.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+              auto start = std::chrono::high_resolution_clock::now();
+              while (true) {
+                hFile = CreateFileA(path.c_str(), GENERIC_READ, 0, NULL,
+                                    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
-                            if (hFile != INVALID_HANDLE_VALUE) {
-                                CloseHandle(hFile);
-                                Sleep(100);
-                                file.open(path);
-                                if (file.is_open()) {
-                                    std::cout << "File is unlocked. Continuing..." << std::endl;
-                                }
-                                else {
-									std::cerr << "Error opening file: " << path
-										<< std::endl;
-									break;
-								}
-                                break;
-                            }
+                if (hFile != INVALID_HANDLE_VALUE) {
+                  CloseHandle(hFile);
+                  Sleep(100);
+                  file.open(path);
+                  if (file.is_open()) {
+                    std::cout << "File is unlocked. Continuing..." << std::endl;
+                  } else {
+                    std::cerr << "Error opening file: " << path << std::endl;
+                    break;
+                  }
+                  break;
+                }
 
-                            auto end = std::chrono::high_resolution_clock::now();
-                            auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
+                auto end = std::chrono::high_resolution_clock::now();
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::seconds>(end -
+                                                                     start)
+                        .count();
 
-                            if (duration >= 5) {
-                                std::cerr << "File is still locked. Exiting..." << std::endl;
-                                return;
-                            }
-                        }
-                    }
-				}
+                if (duration >= 5) {
+                  std::cerr << "File is still locked. Exiting..." << std::endl;
+                  return;
+                }
+              }
             }
+          }
         }
+      }
 #endif
     }
-
-    while (std::getline(file, line)) {
-      size_t getIndex = line.find("ROUTE_GET");
-      size_t postIndex = line.find("ROUTE_POST");
-      size_t putIndex = line.find("ROUTE_PUT");
-      size_t deleteIndex = line.find("ROUTE_DELETE");
-      size_t index = getIndex != std::string::npos      ? getIndex
-                     : postIndex != std::string::npos   ? postIndex
-                     : putIndex != std::string::npos    ? putIndex
-                     : deleteIndex != std::string::npos ? deleteIndex
-                                                        : std::string::npos;
-
-      if (index != std::string::npos) {
-        std::string method = getIndex != std::string::npos      ? "GET"
-                             : postIndex != std::string::npos   ? "POST"
-                             : putIndex != std::string::npos    ? "PUT"
-                             : deleteIndex != std::string::npos ? "DELETE"
-                                                                : "";
-        size_t pathIndex = line.find("\"", index);
-        size_t pathEndIndex = line.find("\"", pathIndex + 1);
-
-        std::string route =
-            line.substr(pathIndex + 1, pathEndIndex - pathIndex - 1);
-
-        size_t funcNameIndex = line.find(",", pathEndIndex);
-        size_t funcNameEndIndex = line.find(")", funcNameIndex);
-
-        std::string funcName = line.substr(
-            funcNameIndex + 2, funcNameEndIndex - funcNameIndex - 2);
-
-        std::string methodCopy = method;
-        std::transform(method.begin(), method.end(), method.begin(), ::tolower);
-
-        routesValue += "\trouter.AddRoute(\"" + methodCopy + "\", \"" + route +
-                       "\", " + method + "_" + funcName + ");\n";
-      }
-    }
-    file.close();
   }
 
-  std::string templateCopy = cppTemplate;
-  templateCopy.replace(templateCopy.find("{{ROUTES}}"), 10, routesValue);
-  templateCopy.replace(templateCopy.find("{{HEADERS}}"), 11, headersValue);
+  while (std::getline(file, line)) {
+    size_t getIndex = line.find("ROUTE_GET");
+    size_t postIndex = line.find("ROUTE_POST");
+    size_t putIndex = line.find("ROUTE_PUT");
+    size_t deleteIndex = line.find("ROUTE_DELETE");
+    size_t index = getIndex != std::string::npos      ? getIndex
+                   : postIndex != std::string::npos   ? postIndex
+                   : putIndex != std::string::npos    ? putIndex
+                   : deleteIndex != std::string::npos ? deleteIndex
+                                                      : std::string::npos;
 
-  std::ofstream file(config["server_location"].get<std::string>() +
-                         "/server.cpp",
-                     std::ios::trunc);
-  file << templateCopy;
+    if (index != std::string::npos) {
+      std::string method = getIndex != std::string::npos      ? "GET"
+                           : postIndex != std::string::npos   ? "POST"
+                           : putIndex != std::string::npos    ? "PUT"
+                           : deleteIndex != std::string::npos ? "DELETE"
+                                                              : "";
+      size_t pathIndex = line.find("\"", index);
+      size_t pathEndIndex = line.find("\"", pathIndex + 1);
 
+      std::string route =
+          line.substr(pathIndex + 1, pathEndIndex - pathIndex - 1);
+
+      size_t funcNameIndex = line.find(",", pathEndIndex);
+      size_t funcNameEndIndex = line.find(")", funcNameIndex);
+
+      std::string funcName =
+          line.substr(funcNameIndex + 2, funcNameEndIndex - funcNameIndex - 2);
+
+      std::string methodCopy = method;
+      std::transform(method.begin(), method.end(), method.begin(), ::tolower);
+
+      routesValue += "\trouter.AddRoute(\"" + methodCopy + "\", \"" + route +
+                     "\", " + method + "_" + funcName + ");\n";
+    }
+  }
   file.close();
 }
 
+std::string templateCopy = cppTemplate;
+templateCopy.replace(templateCopy.find("{{ROUTES}}"), 10, routesValue);
+templateCopy.replace(templateCopy.find("{{HEADERS}}"), 11, headersValue);
+
+std::ofstream fileTemplate(config["server_location"].get<std::string>() +
+                               "/server.cpp",
+                           std::ios::trunc);
+fileTemplate << templateCopy;
+
+fileTemplate.close();
+}
 
 #if defined(__linux__) || defined(__APPLE__)
 void *loadLibrary(const char *libPath) {
-  
-  void *libHandle = dlmopen(LM_ID_NEWLM, libPath, RTLD_NOW | RTLD_LOCAL);
+
+  void *libHandle = dlopen(libPath, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
   if (!libHandle) {
     std::cerr << "Failed to load library: " << dlerror() << std::endl;
     return nullptr;
@@ -214,11 +173,11 @@ void *loadLibrary(const char *libPath) {
   return libHandle;
 }
 #elif defined(_WIN32)
-HINSTANCE loadLibrary(const char* libPath) {
+HINSTANCE loadLibrary(const char *libPath) {
   HMODULE libHandle = LoadLibrary(libPath);
   if (!libHandle) {
-	std::cerr << "Failed to load library: " << GetLastError() << std::endl;
-	return nullptr;
+    std::cerr << "Failed to load library: " << GetLastError() << std::endl;
+    return nullptr;
   }
   return libHandle;
 }
@@ -226,7 +185,7 @@ HINSTANCE loadLibrary(const char* libPath) {
 
 #if defined(__linux__) || defined(__APPLE__)
 void watchFiles() {
-  loadConfig();
+  config = loadConfig();
 
   int fd = inotify_init();
   if (fd < 0) {
@@ -266,17 +225,37 @@ void watchFiles() {
   bool shouldReload = false;
 
   populateRoutes(headers);
+
+  if (config.contains("database")) {
+    reflectModels(config);
+  }
+
+  std::cout << "\033[1;34m[*] Compiling...\033[0m" << std::endl;
+
+  system(std::string("rm -rf " + config["server_location"].get<std::string>() +
+                     "/out")
+             .c_str());
+
   system(std::string("cmake -S " +
                      config["server_location"].get<std::string>() + " -B " +
-                     config["build_location"].get<std::string>())
+                     config["server_location"].get<std::string>() + "/out")
              .c_str());
   system(std::string("cmake --build " +
-                     config["build_location"].get<std::string>())
+                     config["server_location"].get<std::string>() + "/out")
+             .c_str());
+
+  system(std::string("cp " + config["server_location"].get<std::string>() +
+                     "/out/libserver.so " +
+                     config["server_location"].get<std::string>() +
+                     "/out/libserver" + std::to_string(reloadCount) + ".so")
              .c_str());
 
   void *serverLib = loadLibrary(
-      std::string(config["build_location"].get<std::string>() + "/libserver.so")
+      std::string(config["server_location"].get<std::string>() +
+                  "/out/libserver" + std::to_string(reloadCount) + ".so")
           .c_str());
+
+  reloadCount++;
 
   if (!serverLib) {
     return;
@@ -290,6 +269,19 @@ void watchFiles() {
     std::cerr << "Failed to load instantiateRoutes: " << error << std::endl;
     return;
   }
+
+  int fdm = shm_open("/db_connection_details", O_CREAT | O_RDWR, 0666);
+  ftruncate(fdm, sizeof(DatabaseInfo));
+
+  // Map the shared memory segment
+  DatabaseInfo *dbState =
+      (DatabaseInfo *)mmap(nullptr, sizeof(DatabaseInfo),
+                           PROT_READ | PROT_WRITE, MAP_SHARED, fdm, 0);
+
+  memset(dbState->dbConfig, 0, sizeof(dbState->dbConfig));
+
+  strncpy(dbState->dbConfig, config["database"].dump().data(),
+          config["database"].dump().length());
 
   std::jthread serverThread(server, std::ref(shouldReload),
                             std::ref(reloadMutex));
@@ -334,21 +326,32 @@ void watchFiles() {
       }
 
       populateRoutes(headers);
-      system(
-          std::string("rm -rf " + config["build_location"].get<std::string>())
-              .c_str());
-      system(std::string("cmake -S " +
-                         config["server_location"].get<std::string>() + " -B " +
-                         config["build_location"].get<std::string>())
-                 .c_str());
-      system(std::string("cmake --build " +
-                         config["build_location"].get<std::string>())
+
+      if (config.contains("database")) {
+        reflectModels(config);
+      }
+
+      system(std::string("rm -rf " +
+                         config["server_location"].get<std::string>() + "/out")
                  .c_str());
 
-      serverLib =
-          loadLibrary(std::string(config["build_location"].get<std::string>() +
-                                  "/libserver.so")
-                          .c_str());
+      system(std::string("cmake -S " +
+                         config["server_location"].get<std::string>() + " -B " +
+                         config["server_location"].get<std::string>() + "/out")
+                 .c_str());
+      system(std::string("cmake --build " +
+                         config["server_location"].get<std::string>() + "/out")
+                 .c_str());
+
+      system(std::string("cp " + config["server_location"].get<std::string>() +
+                         "/out/libserver.so " +
+                         config["server_location"].get<std::string>() +
+                         "/out/libserver" + std::to_string(reloadCount) + ".so")
+                 .c_str());
+      serverLib = loadLibrary(
+          std::string(config["server_location"].get<std::string>() +
+                      "/out/libserver" + std::to_string(reloadCount) + ".so")
+              .c_str());
 
       if (!serverLib) {
         continue;
@@ -368,11 +371,14 @@ void watchFiles() {
         std::lock_guard<std::mutex> lock(reloadMutex);
         shouldReload = true;
       }
+
+      reloadCount++;
     }
   }
 
   inotify_rm_watch(fd, wd);
   close(fd);
+  close(fdm);
 }
 #elif defined(_WIN32)
 void watchFiles() {
@@ -380,7 +386,8 @@ void watchFiles() {
 
   std::string serverLocation = config["server_location"].get<std::string>();
   std::string endpointFolder = config["endpoint_folder"].get<std::string>();
-  std::string buildLocation = config["server_location"].get<std::string>() + "/out";
+  std::string buildLocation =
+      config["server_location"].get<std::string>() + "/out";
 
   std::string serverPath = serverLocation + "/server.cpp";
   std::string buildPath = buildLocation + "/libserver.dll";
@@ -388,21 +395,22 @@ void watchFiles() {
   std::vector<std::string> headers;
 
   WIN32_FIND_DATAA findFileData;
-  HANDLE hFind = FindFirstFileA((serverLocation + "/" + endpointFolder + "/*").c_str(), &findFileData);
+  HANDLE hFind = FindFirstFileA(
+      (serverLocation + "/" + endpointFolder + "/*").c_str(), &findFileData);
   if (hFind == INVALID_HANDLE_VALUE) {
-	std::cerr << "Failed to find files in endpoint folder" << std::endl;
-	return;
+    std::cerr << "Failed to find files in endpoint folder" << std::endl;
+    return;
   }
 
   do {
     if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-	  continue;
-	}
+      continue;
+    }
 
-	std::string fileName = findFileData.cFileName;
+    std::string fileName = findFileData.cFileName;
     if (fileName.find(".hpp") != std::string::npos) {
-	  headers.push_back(fileName);
-	}
+      headers.push_back(fileName);
+    }
   } while (FindNextFileA(hFind, &findFileData) != 0);
 
   FindClose(hFind);
@@ -411,112 +419,127 @@ void watchFiles() {
   bool shouldReload = false;
 
   populateRoutes(headers);
-  system(std::string("cmake -S " + serverLocation + " -B " + buildLocation).c_str());
+  system(std::string("cmake -S " + serverLocation + " -B " + buildLocation)
+             .c_str());
   system(std::string("cmake --build " + buildLocation).c_str());
 
   auto start = std::chrono::high_resolution_clock::now();
   while (!std::filesystem::exists(buildPath)) {
-      auto end = std::chrono::high_resolution_clock::now();
-      auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
-      if (duration >= 10) {
-	      std::cerr << "Failed to compile server" << std::endl;
-	      return;
-	  }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
+    if (duration >= 10) {
+      std::cerr << "Failed to compile server" << std::endl;
+      return;
+    }
   }
 
   HINSTANCE serverLib = loadLibrary(buildPath.c_str());
 
   if (!serverLib) {
-	return;
+    return;
   }
 
-  instantiateRoutes = (instantiateRoutesFunc)GetProcAddress(serverLib, "instantiateRoutes");
+  instantiateRoutes =
+      (instantiateRoutesFunc)GetProcAddress(serverLib, "instantiateRoutes");
 
   if (!instantiateRoutes) {
-	std::cerr << "Failed to load instantiateRoutes: " << GetLastError() << std::endl;
-	return;
+    std::cerr << "Failed to load instantiateRoutes: " << GetLastError()
+              << std::endl;
+    return;
   }
 
-  std::jthread serverThread(server, std::ref(shouldReload), std::ref(reloadMutex));
+  std::jthread serverThread(server, std::ref(shouldReload),
+                            std::ref(reloadMutex));
 
-  HANDLE hDir = CreateFileA((serverLocation + "/" + endpointFolder).c_str(), FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+  HANDLE hDir = CreateFileA(
+      (serverLocation + "/" + endpointFolder).c_str(), FILE_LIST_DIRECTORY,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
   if (hDir == INVALID_HANDLE_VALUE) {
-	std::cerr << "Failed to open directory: " << GetLastError() << std::endl;
+    std::cerr << "Failed to open directory: " << GetLastError() << std::endl;
   }
 
   FILE_NOTIFY_INFORMATION notifyInfo[1024];
   DWORD bytesReturned = 0;
   while (true) {
-      auto res = ReadDirectoryChangesW(hDir, &notifyInfo, sizeof(notifyInfo), TRUE, FILE_NOTIFY_CHANGE_LAST_WRITE, &bytesReturned, NULL, NULL);
-      
-      if (!res) {
-	      std::cerr << "Failed to read directory changes: " << GetLastError() << std::endl;
-	      return;
+    auto res = ReadDirectoryChangesW(hDir, &notifyInfo, sizeof(notifyInfo),
+                                     TRUE, FILE_NOTIFY_CHANGE_LAST_WRITE,
+                                     &bytesReturned, NULL, NULL);
+
+    if (!res) {
+      std::cerr << "Failed to read directory changes: " << GetLastError()
+                << std::endl;
+      return;
+    }
+
+    for (DWORD i = 0; i < bytesReturned;) {
+      FILE_NOTIFY_INFORMATION *info =
+          (FILE_NOTIFY_INFORMATION *)((char *)notifyInfo + i);
+      std::wstring fileName(info->FileName, info->FileNameLength / 2);
+
+      if (info->Action == FILE_ACTION_MODIFIED) {
+        shouldCompile = true;
+      } else if (info->Action == FILE_ACTION_ADDED) {
+        std::string fileNameStr(fileName.begin(), fileName.end());
+        if (fileNameStr.find(".hpp") != std::string::npos &&
+            std::find(headers.begin(), headers.end(), fileNameStr) ==
+                headers.end()) {
+          headers.push_back(fileNameStr);
+        }
+      } else if (info->Action == FILE_ACTION_REMOVED) {
+        std::string fileNameStr(fileName.begin(), fileName.end());
+        if (fileNameStr.find(".hpp") != std::string::npos) {
+          std::erase(headers, fileNameStr);
+        }
       }
 
-      for (DWORD i = 0; i < bytesReturned;) {
-	      FILE_NOTIFY_INFORMATION *info = (FILE_NOTIFY_INFORMATION *)((char *)notifyInfo + i);
-	      std::wstring fileName(info->FileName, info->FileNameLength / 2);
+      if (info->NextEntryOffset == 0) {
+        break;
+      }
 
-          if (info->Action == FILE_ACTION_MODIFIED) {
-		      shouldCompile = true;
-          }
-          else if (info->Action == FILE_ACTION_ADDED) {
-		      std::string fileNameStr(fileName.begin(), fileName.end());
-              if (fileNameStr.find(".hpp") != std::string::npos && std::find(headers.begin(), headers.end(), fileNameStr) == headers.end()) {
-			      headers.push_back(fileNameStr);
-		      }
-          }
-          else if (info->Action == FILE_ACTION_REMOVED) {
-		      std::string fileNameStr(fileName.begin(), fileName.end());
-              if (fileNameStr.find(".hpp") != std::string::npos) {
-			      std::erase(headers, fileNameStr);
-		      }
-	      }
+      i += info->NextEntryOffset;
+    }
 
-          if (info->NextEntryOffset == 0) {
-              break;
-          }
+    if (shouldCompile) {
+      std::cout << "\033[1;34m[*] Compiling...\033[0m" << std::endl;
 
-	      i += info->NextEntryOffset;
-	  }
+      if (serverLib) {
+        FreeLibrary(serverLib);
+        serverLib = nullptr;
+        instantiateRoutes = nullptr;
+      }
 
-      if (shouldCompile) {
-		  std::cout << "\033[1;34m[*] Compiling...\033[0m" << std::endl;
+      for (auto header : headers) {
+        std::cout << header << std::endl;
+      }
 
-          if (serverLib) {
-			  FreeLibrary(serverLib);
-			  serverLib = nullptr;
-			  instantiateRoutes = nullptr;
-		  }
+      populateRoutes(headers);
+      system(std::string("cmake -S " + serverLocation + " -B " + buildLocation)
+                 .c_str());
+      system(std::string("cmake --build " + buildLocation).c_str());
 
-          for (auto header : headers) {
-              std::cout << header << std::endl;
-          }
+      serverLib = loadLibrary(buildPath.c_str());
 
-		  populateRoutes(headers);
-		  system(std::string("cmake -S " + serverLocation + " -B " + buildLocation).c_str());
-		  system(std::string("cmake --build " + buildLocation).c_str());
+      if (!serverLib) {
+        continue;
+      }
 
-		  serverLib = loadLibrary(buildPath.c_str());
+      instantiateRoutes =
+          (instantiateRoutesFunc)GetProcAddress(serverLib, "instantiateRoutes");
 
-          if (!serverLib) {
-			  continue;
-		  }
+      if (!instantiateRoutes) {
+        std::cerr << "Failed to load instantiateRoutes: " << GetLastError()
+                  << std::endl;
+        continue;
+      }
 
-		  instantiateRoutes = (instantiateRoutesFunc)GetProcAddress(serverLib, "instantiateRoutes");
-
-          if (!instantiateRoutes) {
-			  std::cerr << "Failed to load instantiateRoutes: " << GetLastError() << std::endl;
-			  continue;
-		  }
-
-		  shouldCompile = false;
-          {
-			  std::lock_guard<std::mutex> lock(reloadMutex);
-			  shouldReload = true;
-		  }
-	  }
+      shouldCompile = false;
+      {
+        std::lock_guard<std::mutex> lock(reloadMutex);
+        shouldReload = true;
+      }
+    }
   }
 
   CloseHandle(hDir);

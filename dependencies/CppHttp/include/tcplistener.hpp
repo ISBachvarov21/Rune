@@ -52,21 +52,21 @@ public:
     this->listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
     if (this->listener == INVALID_SOCKET) {
-      std::cout << "\033[31m[-] Failed to create socket...\033[0m\n";
+      std::cout << "\033[31m[-] Failed to create socket...\033[0m" << std::endl;
 
 #ifdef WINDOWS
       std::cout << "\033[31m[-] WSA error code: " << WSAGetLastError()
                 << "\033[0m\n";
 #elif defined(LINUX)
-      std::cout << "\033[31m[-] Error code: " << errno << "\033[0m\n";
+      std::cout << "\033[31m[-] Error code: " << errno << "\033[0m" << std::endl;
       std::cout << "\033[31m[-] Error message: " << strerror(errno)
-                << "\033[0m\n";
+                << "\033[0m" << std::endl;
 #endif
 
       throw std::runtime_error("Failed to create socket");
     }
 
-    std::cout << "\033[1;32m[+] Created socket\033[0m\n";
+    std::cout << "\033[1;32m[+] Created socket\033[0m" << std::endl;
   }
 
   void Bind(const char *ip, uint_fast16_t port, uint_fast8_t maxConnections) {
@@ -84,38 +84,38 @@ public:
     this->serverLen = sizeof(this->server);
     if (bind(this->listener, (struct sockaddr *)&this->server,
              this->serverLen) != 0) {
-      std::cout << "\033[31m[-] Failed to bind socket...\033[0m\n";
+      std::cout << "\033[31m[-] Failed to bind socket...\033[0m" << std::endl;
 
 #ifdef WINDOWS
       std::cout << "\033[31m[-] WSA error code: " << WSAGetLastError()
                 << "\033[0m\n";
 #elif defined(LINUX)
-      std::cout << "\033[31m[-] Error code: " << errno << "\033[0m\n";
+      std::cout << "\033[31m[-] Error code: " << errno << "\033[0m" << std::endl;
       std::cout << "\033[31m[-] Error message: " << strerror(errno)
-                << "\033[0m\n";
+                << "\033[0m" << std::endl;
 #endif
       throw std::runtime_error("Failed to bind socket");
     }
-    std::cout << "\033[1;32m[+] Bound socket\033[0m\n";
+    std::cout << "\033[1;32m[+] Bound socket\033[0m" << std::endl;
   }
 
   void Listen(const char *ip, uint_fast16_t port, uint_fast8_t maxConnections) {
     int backlog = 20;
     if (listen(this->listener, maxConnections) != 0) {
-      std::cout << "\033[31m[-] Failed to listen...\033[0m\n";
+      std::cout << "\033[31m[-] Failed to listen...\033[0m" << std::endl;
 #ifdef WINDOWS
       std::cout << "\033[31m[-] WSA error code: " << WSAGetLastError()
                 << "\033[0m\n";
 #elif defined(LINUX)
-      std::cout << "\033[31m[-] Error code: " << errno << "\033[0m\n";
+      std::cout << "\033[31m[-] Error code: " << errno << "\033[0m" << std::endl;
       std::cout << "\033[31m[-] Error message: " << strerror(errno)
-                << "\033[0m\n";
+                << "\033[0m" << std::endl;
 #endif
 
       throw std::runtime_error("Failed to listen");
     }
     std::cout << "\033[1;32m[+] Started listening on " << ip << ':' << port
-              << " with " << (int)maxConnections << " max connections\033[0m\n";
+              << " with " << (int)maxConnections << " max connections\033[0m" << std::endl;
   }
 
   void Close() {
@@ -197,15 +197,15 @@ public:
 
     if (newConnection == INVALID_SOCKET) {
       std::osyncstream(std::osyncstream(std::cout))
-          << "\033[31m[-] Failed to accept new connection...\033[0m\n";
+          << "\033[31m[-] Failed to accept new connection...\033[0m" << std::endl;
 #ifdef WINDOWS
       std::osyncstream(std::cout)
           << "\033[31m[-] WSA error code: " << WSAGetLastError() << "\033[0m\n";
 #elif defined(LINUX)
       std::osyncstream(std::cout)
-          << "\033[31m[-] Error code: " << errno << "\033[0m\n";
+          << "\033[31m[-] Error code: " << errno << "\033[0m" << std::endl;
       std::osyncstream(std::cout)
-          << "\033[31m[-] Error message: " << strerror(errno) << "\033[0m\n";
+          << "\033[31m[-] Error message: " << strerror(errno) << "\033[0m" << std::endl;
 #endif
     }
 
@@ -247,18 +247,18 @@ public:
       }
 #pragma endregion
 
-      if (bytesReceived < 0 || (int)(*buffer.get()) == NULL) {
+      if (bytesReceived < 0 || (int)(*buffer.get()) == 0) {
         std::osyncstream(std::cout)
-            << "\033[31m[-] Failed to read client request\033[0m\n";
+            << "\033[31m[-] Failed to read client request\033[0m" << std::endl;
 #ifdef WINDOWS
         std::osyncstream(std::cout)
             << "\033[31m[-] WSA error code: " << WSAGetLastError()
             << "\033[0m\n";
 #elif defined(LINUX)
         std::osyncstream(std::cout)
-            << "\033[31m[-] Error code: " << errno << "\033[0m\n";
+            << "\033[31m[-] Error code: " << errno << "\033[0m" << std::endl;
         std::osyncstream(std::cout)
-            << "\033[31m[-] Error message: " << strerror(errno) << "\033[0m\n";
+            << "\033[31m[-] Error message: " << strerror(errno) << "\033[0m" << std::endl;
 #endif
         closesocket(newConnection);
 
@@ -269,7 +269,7 @@ public:
         return;
       } else if (bytesReceived == 0) {
         std::osyncstream(std::cout)
-            << "\033[31m[-] Client disconnected\033[0m\n";
+            << "\033[31m[-] Client disconnected\033[0m" << std::endl;
         closesocket(newConnection);
 
 #ifdef WINDOWS
@@ -283,16 +283,16 @@ public:
 
       if (data == "") {
         std::osyncstream(std::cout)
-            << "\033[31m[-] Failed to read client request\033[0m\n";
+            << "\033[31m[-] Failed to read client request\033[0m" << std::endl;
 #ifdef WINDOWS
         std::osyncstream(std::cout)
             << "\033[31m[-] WSA error code: " << WSAGetLastError()
             << "\033[0m\n";
 #elif defined(LINUX)
         std::osyncstream(std::cout)
-            << "\033[31m[-] Error code: " << errno << "\033[0m\n";
+            << "\033[31m[-] Error code: " << errno << "\033[0m" << std::endl;
         std::osyncstream(std::cout)
-            << "\033[31m[-] Error message: " << strerror(errno) << "\033[0m\n";
+            << "\033[31m[-] Error message: " << strerror(errno) << "\033[0m" << std::endl;
 #endif
         closesocket(newConnection);
 
@@ -323,7 +323,7 @@ public:
 
       closesocket(newConnection);
 
-      std::osyncstream(std::cout) << "\033[1;32m[*] Request handled\033[0m\n";
+      std::osyncstream(std::cout) << "\033[1;32m[*] Request handled\033[0m" << std::endl;
     });
 
     lock.unlock();

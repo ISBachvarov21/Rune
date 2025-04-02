@@ -2,5 +2,15 @@
 	"port": 8000,
 	"host": "127.0.0.1",
 	"server_location": "./server",
-	"endpoint_folder": "routes"
+	"endpoint_folder": "routes",
+
+  "database": {
+    "provider": "postgresql",
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres",
+    "password": "postgres",
+    "database": "rune",
+    "models_location": "./models"
+  }
 }
